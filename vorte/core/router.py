@@ -18,6 +18,13 @@ from vorte.modules.database.planner import active_relations
 
 def infer_relations(response_model: Any) -> Tuple[str, ...]:
     """Infer database relations from a Pydantic response model's fields."""
+    import typing
+    origin = typing.get_origin(response_model)
+    if origin is list or origin is typing.List:
+        args = typing.get_args(response_model)
+        if args:
+            response_model = args[0]
+            
     if not response_model or not hasattr(response_model, "model_fields"):
         return ()
     # We naively return all field names. QueryPlanner safely ignores fields
@@ -110,6 +117,9 @@ class VorteAPIRouter(APIRouter):
             )
             self._versioned_routes.append(vr)
         
+        if "deprecated" in kwargs:
+            del kwargs["deprecated"]
+            
         super().add_api_route(
             path=path,
             endpoint=endpoint,
