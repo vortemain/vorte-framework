@@ -8,6 +8,7 @@ on:
     branches: [ main ]
   release:
     types: [ published ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -78,12 +79,19 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Publish to GitHub Packages
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          packages-dir: dist
-          repository-url: https://upload.pypi.org/legacy/
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          python-version: '3.11'
+
+      - name: Install twine
+        run: pip install twine
+
+      - name: Publish to GitHub Packages
+        run: |
+          twine upload dist/*.whl \
+            --repository-url https://upload.pypi.org/legacy/ \
+            --username __token__ \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --verbose
         continue-on-error: true
