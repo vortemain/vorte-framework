@@ -38,14 +38,12 @@ class UserResponse(BaseModel):
 
 
 def test_infer_relations():
-    """Test that infer_relations extracts all fields from a Pydantic model."""
+    """Test that infer_relations extracts all nested relationship fields from a Pydantic model."""
     relations = infer_relations(UserResponse)
     
-    # It should naively collect all fields, QueryPlanner filters the valid ones
-    assert "id" in relations
-    assert "name" in relations
     assert "profile" in relations
-    assert "posts" in relations
+    assert "id" not in relations
+    assert "name" not in relations
 
 
 def test_query_planner_apply_active():

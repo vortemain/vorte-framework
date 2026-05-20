@@ -5,11 +5,18 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use hyper::body::Incoming;
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
+use http_body_util::combinators::BoxBody;
 use tracing::trace;
 
 use vorte_http::{HttpResponse, Method};
 use vorte_router::MatchResult;
+
+pub type ResponseBody = BoxBody<Bytes, hyper::Error>;
+
+pub fn box_full_response(resp: hyper::Response<Full<Bytes>>) -> hyper::Response<ResponseBody> {
+    resp.map(|body| body.map_err(|never| match never {}).boxed())
+}
 
 pub type HandlerFn = Arc<
     dyn Fn(
@@ -19,7 +26,7 @@ pub type HandlerFn = Arc<
         &MatchResult,
         SocketAddr,
         Option<SocketAddr>,
-    ) -> Pin<Box<dyn Future<Output = hyper::Response<Full<Bytes>>> + Send>>
+    ) -> Pin<Box<dyn Future<Output = hyper::Response<ResponseBody>> + Send>>
         + Send
         + Sync,
 >;
@@ -69,15 +76,15 @@ impl Pipeline {
         match_result: &MatchResult,
         peer_addr: SocketAddr,
         server_addr: Option<SocketAddr>,
-    ) -> hyper::Response<Full<Bytes>> {
+    ) -> hyper::Response<ResponseBody> {
         for hook in self.pre_routing_hooks.read().iter() {
             match hook(&method, path) {
                 HookAction::Continue => {}
                 HookAction::Reject(status) => {
                     trace!("Request rejected by pre-routing hook: {} {} -> {}", method, path, status);
-                    return HttpResponse::new(status)
+                    return box_full_response(HttpResponse::new(status)
                         .json(format!(r#"{{"detail":"Request rejected"}}"#).as_bytes())
-                        .into_hyper();
+                        .into_hyper());
                 }
             }
         }
@@ -86,7 +93,7 @@ impl Pipeline {
         let response = if let Some(handler) = handler_opt {
             handler(req, method, path, match_result, peer_addr, server_addr).await
         } else {
-            HttpResponse::internal_error().into_hyper()
+            box_full_response(HttpResponse::internal_error().into_hyper())
         };
 
         let status = response.status().as_u16();

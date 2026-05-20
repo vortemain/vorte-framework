@@ -104,7 +104,8 @@ class QueryBuilder:
             The model instance or *None* if not found.
         """
         async with self._connection.session() as session:
-            result = await session.get(model, id)
+            options = self._planner.get_active_options(model)
+            result = await session.get(model, id, options=options)
             return result
 
     async def find_or_fail(self, model: Type[T], id: Any) -> T:

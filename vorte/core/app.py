@@ -230,35 +230,40 @@ class Vorte:
         # Request timing + standard response wrapping middleware
         @self.fastapi.middleware("http")
         async def vorte_middleware(request: Request, call_next):
+            from vorte.core.tracing import set_trace_id, reset_trace_id, generate_trace_id
+            
             request_id = _generate_request_id()
             start_time = time.time()
             self._request_start_times[request_id] = start_time
             
-            # Add request_id to request state
+            # Add request_id to request state and context var
             request.state.request_id = request_id
+            token = set_trace_id(request_id)
             
-            # Check for deprecation headers
-            deprecation_headers = self._versioning.get_deprecation_headers(request.url.path)
-            
-            response = await call_next(request)
-            
-            # Add standard headers
-            response.headers["X-Request-ID"] = request_id
-            response.headers["X-Powered-By"] = "Vorte"
-            
-            # Add deprecation headers if applicable
-            if deprecation_headers:
-                for key, value in deprecation_headers.items():
-                    response.headers[key] = value
-            
-            # Add timing header
-            latency_ms = int((time.time() - start_time) * 1000)
-            response.headers["X-Response-Time"] = f"{latency_ms}ms"
-            
-            # Cleanup
-            self._request_start_times.pop(request_id, None)
-            
-            return response
+            try:
+                # Check for deprecation headers
+                deprecation_headers = self._versioning.get_deprecation_headers(request.url.path)
+                
+                response = await call_next(request)
+                
+                # Add standard headers
+                response.headers["X-Request-ID"] = request_id
+                response.headers["X-Powered-By"] = "Vorte"
+                
+                # Add deprecation headers if applicable
+                if deprecation_headers:
+                    for key, value in deprecation_headers.items():
+                        response.headers[key] = value
+                
+                # Add timing header
+                latency_ms = int((time.time() - start_time) * 1000)
+                response.headers["X-Response-Time"] = f"{latency_ms}ms"
+                
+                return response
+            finally:
+                # Cleanup
+                self._request_start_times.pop(request_id, None)
+                reset_trace_id(token)
     
     # _setup_lifecycle is superseded by the lifespan context manager in __init__.
     

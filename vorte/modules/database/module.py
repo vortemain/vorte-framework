@@ -107,6 +107,15 @@ class DatabaseModule(Module):
         self._query: Optional[QueryBuilder] = None
         self._migrations: Optional[MigrationManager] = None
         self._seeders: Optional[SeederManager] = None
+        
+        # Global cache for compiled SQL plans and prepared statement structures
+        self._query_cache: Dict[str, Any] = {}
+
+    def get_cached_query(self, key: str, creator_fn: Callable[[], Any]) -> Any:
+        """Get or create a cached query plan, SQL string, or compiled statement."""
+        if key not in self._query_cache:
+            self._query_cache[key] = creator_fn()
+        return self._query_cache[key]
 
     # ------------------------------------------------------------------
     # Module lifecycle

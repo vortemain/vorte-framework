@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use vorte_http::Method;
 use vorte_router::Router;
 
+use crate::bridge::EventLoopHandle;
 use crate::handler::create_python_handler;
 use crate::metrics::{MetricsBuffer, MetricsCollector};
 
@@ -32,7 +33,9 @@ impl VorteEngine {
     #[pyo3(signature = (method, path))]
     fn add_route(&self, method: &str, path: &str) -> PyResult<()> {
         if self.running.load(Ordering::SeqCst) {
-            return Err(PyRuntimeError::new_err("Cannot add routes while server is running"));
+            return Err(PyRuntimeError::new_err(
+                "Cannot add routes while server is running",
+            ));
         }
 
         let router = self
@@ -74,6 +77,9 @@ impl VorteEngine {
 
         router.freeze();
 
+        let event_loop_handle = EventLoopHandle::start(py)?;
+        let event_loop_shutdown = event_loop_handle.clone();
+
         let app_py: Py<PyAny> = app.unbind();
         let addr: SocketAddr = format!("{}:{}", host, port)
             .parse()
@@ -94,9 +100,11 @@ impl VorteEngine {
                 .worker_threads(worker_count)
                 .enable_all()
                 .build()
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to create runtime: {}", e))
+                })?;
 
-            let handler = create_python_handler(app_py, metrics);
+            let handler = create_python_handler(app_py, metrics, event_loop_handle);
 
             let server = vorte_core::Server::builder()
                 .addr(addr)
@@ -107,6 +115,10 @@ impl VorteEngine {
                 if let Err(e) = server.run().await {
                     eprintln!("Server error: {}", e);
                 }
+            });
+
+            Python::with_gil(|py| {
+                event_loop_shutdown.stop(py);
             });
 
             Ok(())
@@ -123,7 +135,6 @@ impl VorteEngine {
         return self.running.load(Ordering::SeqCst);
     }
 
-    /// Access the native metrics collector backed by this engine's ring buffer.
     #[getter]
     fn metrics(&self, py: Python) -> PyResult<Py<MetricsCollector>> {
         let collector = MetricsCollector::from_buffer(self.metrics_buffer.clone());

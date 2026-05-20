@@ -4,6 +4,9 @@ members = [
     "crates/vorte-http",
     "crates/vorte-router",
     "crates/vorte-core",
+    "crates/vorte-scheduler",
+    "crates/vorte-queue",
+    "crates/vorte-serde",
     "crates/vorte-py",
 ]
 
@@ -30,3 +33,13 @@ tokio-rustls = "0.26"
 rustls-pemfile = "2.2"
 rustls = "0.23"
 smallvec = "1.13"
+serde = { version = "1", features = ["derive"] }
+crossbeam-channel = "0.5"
+serde_json = "1"
+redis = { version = "0.27", features = ["tokio-comp", "streams"] }
+rmp-serde = "1"
+ciborium = "0.2"
+prost = "0.13"
+prost-types = "0.13"
+tokio-tungstenite = { version = "0.24", features = ["handshake"] }
+futures-util = "0.3"

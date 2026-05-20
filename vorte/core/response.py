@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 from fastapi import status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from collections.abc import AsyncIterable
 
 from vorte.core.serializer import FastSerializer
 
@@ -268,3 +269,46 @@ def ai_response(
         response_time_ms=response_time_ms,
     )
     return success_response(data=data, ai=ai_meta)
+
+
+class VorteSSEResponse(StreamingResponse):
+    """
+    Server-Sent Events (SSE) streaming response.
+
+    Accepts an async generator/iterable yielding either strings, dictionaries/lists
+    (which are serialized using FastSerializer), or SSE event payloads, and yields
+    properly structured `data: <content>\n\n` event-stream blocks.
+    """
+
+    def __init__(
+        self,
+        content: AsyncIterable[Any],
+        status_code: int = 200,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs,
+    ):
+        headers = headers or {}
+        headers.setdefault("Cache-Control", "no-cache")
+        headers.setdefault("Connection", "keep-alive")
+        headers.setdefault("X-Accel-Buffering", "no")
+
+        async def sse_generator() -> AsyncIterable[bytes]:
+            async for item in content:
+                if isinstance(item, bytes):
+                    yield item
+                elif isinstance(item, str):
+                    if item.startswith("data:") or item.startswith("event:") or item.startswith(":"):
+                        yield item.encode("utf-8")
+                    else:
+                        yield b"data: " + item.encode("utf-8") + b"\n\n"
+                else:
+                    serialized_bytes = FastSerializer.dumps(item)
+                    yield b"data: " + serialized_bytes + b"\n\n"
+
+        super().__init__(
+            content=sse_generator(),
+            status_code=status_code,
+            media_type="text/event-stream",
+            headers=headers,
+            **kwargs,
+        )

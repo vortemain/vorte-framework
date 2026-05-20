@@ -32,17 +32,20 @@ def test_fast_serializer_handles_nested():
 
 
 def test_fast_serializer_backend_is_set():
-    # Backend should be either orjson or stdlib
-    assert FastSerializer.backend in ("orjson", "stdlib")
+    # Backend should be either native, orjson or stdlib
+    assert FastSerializer.backend in ("native", "orjson", "stdlib")
 
 
 def test_fast_serializer_is_native():
-    # is_native is True only when orjson is installed
-    try:
-        import orjson
+    # is_native is True when native or orjson is used
+    if FastSerializer.backend == "native":
         assert FastSerializer.is_native() is True
-    except ImportError:
-        assert FastSerializer.is_native() is False
+    else:
+        try:
+            import orjson
+            assert FastSerializer.is_native() is True
+        except ImportError:
+            assert FastSerializer.is_native() is False
 
 
 def test_lazy_schema_decorator_sets_metadata():

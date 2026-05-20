@@ -17,19 +17,47 @@ from vorte.modules.database.planner import active_relations
 
 
 def infer_relations(response_model: Any) -> Tuple[str, ...]:
-    """Infer database relations from a Pydantic response model's fields."""
+    """Infer database relations recursively from a Pydantic response model's fields."""
     import typing
-    origin = typing.get_origin(response_model)
-    if origin is list or origin is typing.List:
-        args = typing.get_args(response_model)
-        if args:
-            response_model = args[0]
+    from typing import Union
+    try:
+        from types import UnionType
+    except ImportError:
+        UnionType = None
+
+    def _unwrap_type(t: Any) -> Any:
+        origin = typing.get_origin(t)
+        if origin is list or origin is typing.List:
+            args = typing.get_args(t)
+            if args:
+                return _unwrap_type(args[0])
+        elif origin is Union or (UnionType and origin is UnionType):
+            args = typing.get_args(t)
+            # Filter out None type
+            args = [a for a in args if a is not type(None)]
+            if args:
+                return _unwrap_type(args[0])
+        return t
+
+    def _recurse(model: Any, parent_path: str = "") -> List[str]:
+        model = _unwrap_type(model)
+        if not model or not hasattr(model, "model_fields"):
+            return []
+        
+        relations = []
+        for name, field in model.model_fields.items():
+            field_type = _unwrap_type(field.annotation)
+            path = f"{parent_path}.{name}" if parent_path else name
             
-    if not response_model or not hasattr(response_model, "model_fields"):
-        return ()
-    # We naively return all field names. QueryPlanner safely ignores fields
-    # that don't exist as SQLAlchemy relationships on the target model.
-    return tuple(response_model.model_fields.keys())
+            # If the field is a nested Pydantic model, it represents a database relationship
+            if hasattr(field_type, "model_fields"):
+                relations.append(path)
+                relations.extend(_recurse(field_type, parent_path=path))
+        return relations
+
+    unwrapped_root = _unwrap_type(response_model)
+    return tuple(_recurse(unwrapped_root))
+
 
 
 class VorteAPIRoute(APIRoute):

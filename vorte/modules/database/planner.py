@@ -29,6 +29,22 @@ active_relations: contextvars.ContextVar[Tuple[str, ...]] = contextvars.ContextV
     "active_relations", default=()
 )
 
+active_detector: contextvars.ContextVar[Optional[N1Detector]] = contextvars.ContextVar(
+    "active_detector", default=None
+)
+
+try:
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "before_cursor_execute")
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        detector = active_detector.get()
+        if detector is not None:
+            detector.record(statement)
+except ImportError:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # N+1 Detector
@@ -53,6 +69,7 @@ class N1Detector:
         self.raise_on_exceed = raise_on_exceed
         self._query_count: int = 0
         self._queries: List[str] = []
+        self._token = None
 
     def record(self, sql: str = "") -> None:
         """Record one query emission. Call this from your DB layer / middleware."""
@@ -71,9 +88,12 @@ class N1Detector:
     async def __aenter__(self) -> "N1Detector":
         self._query_count = 0
         self._queries = []
+        self._token = active_detector.set(self)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self._token is not None:
+            active_detector.reset(self._token)
         if self._query_count > self.threshold:
             message = (
                 f"N+1 query warning: {self._query_count} queries detected in this request "
@@ -186,6 +206,40 @@ class QueryPlanner:
             return stmt
         return self.apply(stmt, model, relations)
 
+    def get_active_options(self, model: Any) -> List[Any]:
+        """Return the active selectinload options for the current context."""
+        relations = active_relations.get()
+        if not relations:
+            return []
+        options = []
+        try:
+            from sqlalchemy.orm import selectinload
+            from sqlalchemy.orm.relationships import RelationshipProperty
+        except ImportError:
+            return []
+
+        for rel in relations:
+            parts = rel.split(".")
+            current_model = model
+            current_option = None
+            valid = True
+            
+            for part in parts:
+                attr = getattr(current_model, part, None)
+                if attr is not None and hasattr(attr, "property") and isinstance(attr.property, RelationshipProperty):
+                    if current_option is None:
+                        current_option = selectinload(attr)
+                    else:
+                        current_option = current_option.selectinload(attr)
+                    current_model = attr.property.mapper.class_
+                else:
+                    valid = False
+                    break
+            
+            if valid and current_option is not None:
+                options.append(current_option)
+        return options
+
     def apply(self, stmt: Any, model: Any, relations: Tuple[str, ...]) -> Any:
         """
         Apply SQLAlchemy ``selectinload`` options for *relations* to *stmt*.
@@ -199,10 +253,25 @@ class QueryPlanner:
             return stmt
 
         for rel in relations:
-            attr = getattr(model, rel, None)
-            # Only apply selectinload if the attribute is actually a relationship
-            if attr is not None and hasattr(attr, "property") and isinstance(attr.property, RelationshipProperty):
-                stmt = stmt.options(selectinload(attr))
+            parts = rel.split(".")
+            current_model = model
+            current_option = None
+            valid = True
+            
+            for part in parts:
+                attr = getattr(current_model, part, None)
+                if attr is not None and hasattr(attr, "property") and isinstance(attr.property, RelationshipProperty):
+                    if current_option is None:
+                        current_option = selectinload(attr)
+                    else:
+                        current_option = current_option.selectinload(attr)
+                    current_model = attr.property.mapper.class_
+                else:
+                    valid = False
+                    break
+            
+            if valid and current_option is not None:
+                stmt = stmt.options(current_option)
                 self._stats[rel] = self._stats.get(rel, 0) + 1
             else:
                 logger.debug(
@@ -211,6 +280,7 @@ class QueryPlanner:
                     getattr(model, "__name__", model),
                 )
         return stmt
+
 
     @property
     def stats(self) -> Dict[str, int]:

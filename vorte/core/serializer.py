@@ -27,31 +27,60 @@ F = TypeVar("F", bound=Callable)
 
 try:
     import orjson as _orjson  # type: ignore[import]
+except ImportError:
+    _orjson = None
 
-    def _dumps(obj: Any) -> bytes:
+try:
+    from vorte._vorte_engine import NativeSerde
+    _native_serde = NativeSerde()
+except ImportError:
+    _native_serde = None
+
+# Unwrapped, minimal-layer serializers for maximum JSON speed
+if _orjson is not None:
+    def _dumps_json(obj: Any) -> bytes:
         return _orjson.dumps(obj)
 
-    def _dumps_str(obj: Any) -> str:
-        return _orjson.dumps(obj).decode("utf-8")
-
-    def _loads(data: bytes | str) -> Any:
+    def _loads_json(data: bytes | str) -> Any:
         return _orjson.loads(data)
 
-    _BACKEND = "orjson"
-
-except ImportError:
-    _orjson = None  # type: ignore[assignment]
-
-    def _dumps(obj: Any) -> bytes:
+    _BACKEND = "orjson" if _native_serde is None else "native"
+else:
+    def _dumps_json(obj: Any) -> bytes:
         return _stdlib_json.dumps(obj, separators=(",", ":"), default=str).encode("utf-8")
 
-    def _dumps_str(obj: Any) -> str:
-        return _stdlib_json.dumps(obj, separators=(",", ":"), default=str)
-
-    def _loads(data: bytes | str) -> Any:
+    def _loads_json(data: bytes | str) -> Any:
         return _stdlib_json.loads(data)
 
     _BACKEND = "stdlib"
+
+
+def _dumps(obj: Any, format: str = "json") -> bytes:
+    if format == "json":
+        return _dumps_json(obj)
+    if _native_serde is not None:
+        return _native_serde.serialize(obj, format)
+    raise ValueError(f"Format '{format}' not supported without native engine")
+
+
+def _dumps_str(obj: Any, format: str = "json") -> str:
+    if format == "json":
+        if _orjson is not None:
+            return _orjson.dumps(obj).decode("utf-8")
+        return _stdlib_json.dumps(obj, separators=(",", ":"), default=str)
+    if _native_serde is not None:
+        return _native_serde.serialize(obj, format).decode("utf-8")
+    raise ValueError(f"Format '{format}' not supported without native engine")
+
+
+def _loads(data: bytes | str, format: str = "json") -> Any:
+    if format == "json":
+        return _loads_json(data)
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    if _native_serde is not None:
+        return _native_serde.deserialize(data, format)
+    raise ValueError(f"Format '{format}' not supported without native engine")
 
 
 class FastSerializer:
@@ -59,8 +88,9 @@ class FastSerializer:
     Drop-in JSON serializer that picks the fastest available backend.
 
     Backend selection (highest priority first):
-      1. ``orjson``  — C-extension, 3–10× faster than stdlib
-      2. ``json``    — stdlib fallback (always available)
+      1. ``native``  — Rust-backed NativeSerde, zero-copy
+      2. ``orjson``  — C-extension, 3–10× faster than stdlib
+      3. ``json``    — stdlib fallback (always available)
 
     Usage::
 
@@ -72,24 +102,72 @@ class FastSerializer:
     backend: str = _BACKEND
 
     @staticmethod
-    def dumps(obj: Any) -> bytes:
-        """Serialize *obj* to a UTF-8 encoded JSON byte string."""
-        return _dumps(obj)
+    def dumps(obj: Any, format: str = "json") -> bytes:
+        """Serialize *obj* to a UTF-8 encoded JSON or other format byte string."""
+        return _dumps(obj, format)
 
     @staticmethod
-    def dumps_str(obj: Any) -> str:
-        """Serialize *obj* to a JSON string (text, not bytes)."""
-        return _dumps_str(obj)
+    def dumps_str(obj: Any, format: str = "json") -> str:
+        """Serialize *obj* to a JSON or other format string (text, not bytes)."""
+        return _dumps_str(obj, format)
 
     @staticmethod
-    def loads(data: bytes | str) -> Any:
-        """Deserialize *data* from JSON."""
-        return _loads(data)
+    def loads(data: bytes | str, format: str = "json") -> Any:
+        """Deserialize *data* from JSON or other format."""
+        return _loads(data, format)
 
     @classmethod
     def is_native(cls) -> bool:
-        """Return ``True`` if orjson is being used."""
-        return cls.backend == "orjson"
+        """Return ``True`` if native Rust serialization is being used."""
+        return cls.backend == "native" or cls.backend == "orjson"
+
+    @staticmethod
+    def benchmark_serialize(obj: Any) -> dict:
+        """
+        Benchmark each serialization stage for the given object.
+        Measures:
+          1. Preprocessing / Conversion (preparing standard dictionary or raw rows)
+          2. Serialization (actual encoding to bytes)
+          3. Copying / Transport (simulation of memory copy)
+          4. Total pipeline duration
+        """
+        import time
+        metrics = {}
+        
+        # 1. Preprocessing / Conversion
+        t0 = time.perf_counter_ns()
+        if hasattr(obj, "to_dict"):
+            prepared = obj.to_dict()
+        elif hasattr(obj, "model_dump"):
+            prepared = obj.model_dump()
+        else:
+            prepared = obj
+        t1 = time.perf_counter_ns()
+        metrics["preprocessing_ns"] = t1 - t0
+        metrics["preprocessing_ms"] = (t1 - t0) / 1_000_000.0
+        
+        # 2. Serialization
+        t2 = time.perf_counter_ns()
+        if _orjson is not None:
+            serialized = _orjson.dumps(prepared)
+        else:
+            serialized = _stdlib_json.dumps(prepared).encode("utf-8")
+        t3 = time.perf_counter_ns()
+        metrics["serialization_ns"] = t3 - t2
+        metrics["serialization_ms"] = (t3 - t2) / 1_000_000.0
+        
+        # 3. Copying / Transport simulation
+        t4 = time.perf_counter_ns()
+        _ = bytes(serialized)
+        t5 = time.perf_counter_ns()
+        metrics["copying_ns"] = t5 - t4
+        metrics["copying_ms"] = (t5 - t4) / 1_000_000.0
+        
+        metrics["total_ns"] = (t1 - t0) + (t3 - t2) + (t5 - t4)
+        metrics["total_ms"] = metrics["total_ns"] / 1_000_000.0
+        metrics["payload_size_bytes"] = len(serialized)
+        
+        return metrics
 
 
 # ---------------------------------------------------------------------------

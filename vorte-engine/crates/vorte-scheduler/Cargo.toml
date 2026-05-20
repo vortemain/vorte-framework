@@ -1,0 +1,10 @@
+[package]
+name = "vorte-scheduler"
+description = "Priority-based task scheduler with adaptive worker scaling for VORTE"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }

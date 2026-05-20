@@ -28,7 +28,7 @@ __license__ = "MIT"
 from vorte.core.app import Vorte
 from vorte.core.module import Module, ModuleRegistry, ModuleMeta, ModuleState, ModulePriority
 from vorte.core.config import Settings, settings
-from vorte.core.response import VorteResponse, success_response, error_response
+from vorte.core.response import VorteResponse, success_response, error_response, VorteSSEResponse
 from vorte.core.router import router
 from vorte.core.di import Container, Depends, inject, wire
 from vorte.core.serializer import FastSerializer, lazy_schema
@@ -74,6 +74,7 @@ __all__ = [
     "VorteResponse",
     "success_response",
     "error_response",
+    "VorteSSEResponse",
     "router",
     "Container",
     "Depends",

@@ -78,10 +78,16 @@ class ConnectionManager:
 
         engine_kwargs = {
             "pool_pre_ping": True,
-            "pool_recycle": 3600,
+            "pool_recycle": 1800, # Optimized connection recycle
             "echo": self._echo,
         }
-        if not self._url.startswith("sqlite"):
+        
+        # Auto-configure StaticPool for SQLite to prevent memory isolation issues across threads
+        if "sqlite" in self._url:
+            from sqlalchemy.pool import StaticPool
+            engine_kwargs["poolclass"] = StaticPool
+        else:
+            engine_kwargs["pool_timeout"] = 30   # Optimized pool timeout
             engine_kwargs["pool_size"] = self._pool_size
             engine_kwargs["max_overflow"] = self._max_overflow
 
@@ -91,10 +97,14 @@ class ConnectionManager:
         for replica_url in self._read_replica_urls:
             replica_kwargs = {
                 "pool_pre_ping": True,
-                "pool_recycle": 3600,
+                "pool_recycle": 1800,
                 "echo": self._echo,
             }
-            if not replica_url.startswith("sqlite"):
+            if "sqlite" in replica_url:
+                from sqlalchemy.pool import StaticPool
+                replica_kwargs["poolclass"] = StaticPool
+            else:
+                replica_kwargs["pool_timeout"] = 30
                 replica_kwargs["pool_size"] = self._pool_size
                 replica_kwargs["max_overflow"] = self._max_overflow
 
@@ -203,6 +213,50 @@ class ConnectionManager:
     # Health / diagnostics
     # ------------------------------------------------------------------
 
+    def get_pool_metrics(self) -> Dict[str, Any]:
+        """Get connection pooling metrics for the primary engine."""
+        if not self._initialized or self._engine is None:
+            return {"status": "uninitialized"}
+
+        pool = self._engine.pool
+        metrics = {
+            "driver": self._engine.driver,
+            "pool_class": pool.__class__.__name__,
+        }
+        
+        # Safe attribute/method checks on the pool object
+        if hasattr(pool, "size"):
+            metrics["pool_size"] = pool.size()
+        else:
+            metrics["pool_size"] = 0
+            
+        if hasattr(pool, "checkedout"):
+            metrics["checked_out"] = pool.checkedout()
+        else:
+            metrics["checked_out"] = 0
+            
+        if hasattr(pool, "overflow"):
+            metrics["overflow"] = pool.overflow()
+        else:
+            metrics["overflow"] = 0
+            
+        if hasattr(pool, "max_overflow"):
+            metrics["max_overflow"] = pool.max_overflow()
+        else:
+            metrics["max_overflow"] = 0
+
+        # Calculate utilization percentage
+        if metrics["pool_size"] > 0:
+            total_capacity = metrics["pool_size"] + max(0, metrics["max_overflow"])
+            if total_capacity > 0:
+                metrics["utilization_pct"] = round((metrics["checked_out"] / total_capacity) * 100, 2)
+            else:
+                metrics["utilization_pct"] = 0.0
+        else:
+            metrics["utilization_pct"] = 0.0
+            
+        return metrics
+
     async def health_check(self) -> Dict[str, Any]:
         """Run a lightweight connectivity check against all engines."""
         results: Dict[str, Any] = {"primary": "unknown", "replicas": []}
@@ -217,6 +271,7 @@ class ConnectionManager:
                 "status": "healthy",
                 "latency_ms": round(latency_ms, 2),
                 "url": self._mask_url(self._url),
+                "pool": self.get_pool_metrics(),
             }
         except Exception as exc:
             results["primary"] = {"status": "unhealthy", "error": str(exc)}

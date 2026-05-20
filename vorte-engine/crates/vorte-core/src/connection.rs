@@ -8,6 +8,7 @@ use hyper::body::Incoming;
 use hyper::service::Service;
 use hyper::Request;
 use http_body_util::Full;
+use crate::pipeline::{ResponseBody, box_full_response};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tracing::{trace, warn};
@@ -120,7 +121,7 @@ struct VorteService {
 }
 
 impl Service<Request<Incoming>> for VorteService {
-    type Response = hyper::Response<Full<Bytes>>;
+    type Response = hyper::Response<ResponseBody>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -143,7 +144,7 @@ impl Service<Request<Incoming>> for VorteService {
                 pipeline.execute(req, method, &path, &match_result, peer_addr, server_addr).await
             } else {
                 trace!("No route match: {} {}", method, path);
-                HttpResponse::not_found().into_hyper()
+                box_full_response(HttpResponse::not_found().into_hyper())
             };
 
             Ok(response)

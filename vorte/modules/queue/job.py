@@ -52,6 +52,7 @@ class JobPayload:
     failed_at: Optional[float] = None
     error: Optional[str] = None
     status: str = "pending"  # pending, running, completed, failed, cancelled
+    trace_id: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the payload to a dictionary."""
@@ -74,6 +75,7 @@ class JobPayload:
             "failed_at": self.failed_at,
             "error": self.error,
             "status": self.status,
+            "trace_id": self.trace_id,
         }
 
     @classmethod

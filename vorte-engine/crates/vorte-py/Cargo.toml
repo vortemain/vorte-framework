@@ -12,11 +12,25 @@ crate-type = ["cdylib"]
 vorte-http = { path = "../vorte-http" }
 vorte-router = { path = "../vorte-router" }
 vorte-core = { path = "../vorte-core" }
+vorte-scheduler = { path = "../vorte-scheduler" }
+vorte-queue = { path = "../vorte-queue", features = ["redis-backend"] }
+vorte-serde = { path = "../vorte-serde" }
 tokio = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 http = { workspace = true }
+http-body = { workspace = true }
 http-body-util = { workspace = true }
 bytes = { workspace = true }
 pyo3 = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
+serde_json = { workspace = true }
+crossbeam-channel = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+sha1 = "0.10"
+data-encoding = "2.6"
+rmp-serde = { workspace = true }
+serde = { workspace = true }
+ciborium = { workspace = true }

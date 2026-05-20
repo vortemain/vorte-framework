@@ -27,6 +27,17 @@ from typing import Any, Callable, Optional, TypeVar
 F = TypeVar("F", bound=Callable)
 
 
+try:
+    from vorte._vorte_engine import RustExecutor
+except ImportError:
+    RustExecutor = None
+
+try:
+    from vorte._vorte_engine import TaskScheduler as _NativeTaskScheduler
+except ImportError:
+    _NativeTaskScheduler = None
+
+
 class VorteExecutor:
     """
     Unified work-stealing executor for VORTE routes.
@@ -35,6 +46,9 @@ class VorteExecutor:
     to ``cpu_count × 4`` threads (matching what Tokio allocates on the Rust
     side). Async handlers run directly on the event loop; sync handlers are
     automatically offloaded via ``loop.run_in_executor``.
+
+    When the native Rust scheduler is available, sync tasks are submitted to
+    the priority-based Rust scheduler for optimal CPU-bound work distribution.
 
     Usage::
 
@@ -55,6 +69,14 @@ class VorteExecutor:
             max_workers=self._max_workers,
             thread_name_prefix="vorte-worker",
         )
+        if RustExecutor is not None:
+            self._rust_executor = RustExecutor(self._max_workers)
+        else:
+            self._rust_executor = None
+        if _NativeTaskScheduler is not None:
+            self._scheduler = _NativeTaskScheduler(self._max_workers)
+        else:
+            self._scheduler = None
         self._submitted: int = 0
         self._completed: int = 0
 
@@ -67,6 +89,13 @@ class VorteExecutor:
     def active_jobs(self) -> int:
         """Approximate number of in-flight synchronous jobs."""
         return self._submitted - self._completed
+
+    @property
+    def scheduler_stats(self) -> Optional[dict]:
+        """Rust scheduler statistics, if available."""
+        if self._scheduler is not None:
+            return self._scheduler.stats()
+        return None
 
     async def run(self, fn: Callable, *args: Any, **kwargs: Any) -> Any:
         """
@@ -81,11 +110,20 @@ class VorteExecutor:
         loop = asyncio.get_running_loop()
         self._submitted += 1
         try:
-            if kwargs:
-                from functools import partial
-                result = await loop.run_in_executor(self._pool, partial(fn, *args, **kwargs))
+            if self._rust_executor is not None:
+                result = await loop.run_in_executor(
+                    self._pool,
+                    self._rust_executor.run,
+                    fn,
+                    args,
+                    kwargs or None,
+                )
             else:
-                result = await loop.run_in_executor(self._pool, fn, *args)
+                if kwargs:
+                    from functools import partial
+                    result = await loop.run_in_executor(self._pool, partial(fn, *args, **kwargs))
+                else:
+                    result = await loop.run_in_executor(self._pool, fn, *args)
         finally:
             self._completed += 1
         return result
@@ -96,12 +134,28 @@ class VorteExecutor:
         """Run *fn* with a deadline, raising :exc:`asyncio.TimeoutError` on expiry."""
         return await asyncio.wait_for(self.run(fn, *args, **kwargs), timeout=timeout)
 
+    def submit_background(self, fn: Callable, *args: Any, priority: str = "low", **kwargs: Any) -> None:
+        """
+        Submit a fire-and-forget task to the Rust scheduler.
+
+        Unlike ``run``, this does not return a result. The task executes
+        in the background on the Rust priority queue.
+        """
+        if self._scheduler is not None:
+            self._scheduler.submit(fn, args, kwargs or None, priority)
+        else:
+            self._pool.submit(fn, *args, **kwargs)
+
     def shutdown(self, wait: bool = True) -> None:
-        """Shutdown the underlying thread pool."""
+        """Shutdown the underlying thread pool and scheduler."""
+        if self._scheduler is not None:
+            self._scheduler.shutdown()
         self._pool.shutdown(wait=wait)
 
     def __del__(self) -> None:
         try:
+            if self._scheduler is not None:
+                self._scheduler.shutdown()
             self._pool.shutdown(wait=False)
         except Exception:
             pass
