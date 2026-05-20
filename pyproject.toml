@@ -10,9 +10,9 @@ module-name = "vorte._vorte_engine"
 
 [project]
 name = "vorte"
-version = "1.0.8"
+version = "1.0.9"
 description = "The AI-First Python API Framework. Fast, intelligent, and modular."
-readme = "README.md"
+readme = {file = "README.md", content-type = "text/markdown"}
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
@@ -66,11 +66,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Lijohtech-Developers/vorte-framework"
-Documentation = "https://github.com/Lijohtech-Developers/vorte-framework/tree/main/docs"
-Repository = "https://github.com/Lijohtech-Developers/vorte-framework"
-Issues = "https://github.com/Lijohtech-Developers/vorte-framework/issues"
-Changelog = "https://github.com/Lijohtech-Developers/vorte-framework/blob/main/CHANGELOG.md"
+Homepage = "https://pypi.org/project/vorte/"
+Documentation = "https://github.com/vortemain/vorte-framework/tree/main/docs"
+Repository = "https://github.com/vortemain/vorte-framework"
+Issues = "https://github.com/vortemain/vorte-framework/issues"
+Changelog = "https://github.com/vortemain/vorte-framework/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 full = [
