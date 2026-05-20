@@ -1,4 +1,4 @@
-name: CI & Publish to PyPI
+name: CI & Publish
 
 on:
   push:
@@ -42,14 +42,14 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: dist/*.whl
 
-  publish:
+  publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
     needs: [ build_wheels ]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
     permissions:
-      id-token: write  # Required for Trusted Publishing on PyPI
-    
+      id-token: write
+
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -61,3 +61,29 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+
+  publish-github:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    needs: [ build_wheels ]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to GitHub Packages
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          repository-url: https://upload.pypi.org/legacy/
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
