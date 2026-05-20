@@ -15,6 +15,7 @@ vorte-core = { path = "../vorte-core" }
 vorte-scheduler = { path = "../vorte-scheduler" }
 vorte-queue = { path = "../vorte-queue", features = ["redis-backend"] }
 vorte-serde = { path = "../vorte-serde" }
+vorte-graph = { path = "../vorte-graph" }
 tokio = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }

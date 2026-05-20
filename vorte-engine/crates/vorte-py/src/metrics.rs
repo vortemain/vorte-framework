@@ -10,9 +10,15 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+
+pub static VORTE_SERIALIZATION_TIME_NS: AtomicU64 = AtomicU64::new(0);
+pub static VORTE_DATABASE_WAIT_TIME_NS: AtomicU64 = AtomicU64::new(0);
+pub static VORTE_SCHEDULING_LATENCY_NS: AtomicU64 = AtomicU64::new(0);
+pub static VORTE_EVENT_LOOP_LAG_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Maximum spans held in the ring buffer before old entries are evicted.
 const RING_BUFFER_CAPACITY: usize = 10_000;
@@ -173,5 +179,35 @@ impl MetricsCollector {
     #[getter]
     pub fn capacity(&self) -> usize {
         RING_BUFFER_CAPACITY
+    }
+
+    pub fn increment_serialization_time(&self, amt: u64) {
+        VORTE_SERIALIZATION_TIME_NS.fetch_add(amt, Ordering::Relaxed);
+    }
+    pub fn increment_database_wait_time(&self, amt: u64) {
+        VORTE_DATABASE_WAIT_TIME_NS.fetch_add(amt, Ordering::Relaxed);
+    }
+    pub fn increment_scheduling_latency(&self, amt: u64) {
+        VORTE_SCHEDULING_LATENCY_NS.fetch_add(amt, Ordering::Relaxed);
+    }
+    pub fn increment_event_loop_lag(&self, amt: u64) {
+        VORTE_EVENT_LOOP_LAG_NS.fetch_add(amt, Ordering::Relaxed);
+    }
+
+    #[getter]
+    pub fn serialization_time_ns(&self) -> u64 {
+        VORTE_SERIALIZATION_TIME_NS.load(Ordering::Relaxed)
+    }
+    #[getter]
+    pub fn database_wait_time_ns(&self) -> u64 {
+        VORTE_DATABASE_WAIT_TIME_NS.load(Ordering::Relaxed)
+    }
+    #[getter]
+    pub fn scheduling_latency_ns(&self) -> u64 {
+        VORTE_SCHEDULING_LATENCY_NS.load(Ordering::Relaxed)
+    }
+    #[getter]
+    pub fn event_loop_lag_ns(&self) -> u64 {
+        VORTE_EVENT_LOOP_LAG_NS.load(Ordering::Relaxed)
     }
 }

@@ -18,6 +18,7 @@ pub struct Task {
     pub work: Box<dyn FnOnce() + Send + 'static>,
     pub priority: TaskPriority,
     pub deadline: Option<Instant>,
+    pub created_at: Instant,
     pub label: Option<String>,
 }
 
@@ -27,6 +28,7 @@ impl Task {
             work,
             priority: TaskPriority::Normal,
             deadline: None,
+            created_at: Instant::now(),
             label: None,
         }
     }
@@ -38,6 +40,11 @@ impl Task {
 
     pub fn with_deadline(mut self, deadline: Instant) -> Self {
         self.deadline = Some(deadline);
+        self
+    }
+
+    pub fn with_created_at(mut self, created_at: Instant) -> Self {
+        self.created_at = created_at;
         self
     }
 

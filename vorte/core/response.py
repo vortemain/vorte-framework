@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 from fastapi import status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from collections.abc import AsyncIterable
 
 from vorte.core.serializer import FastSerializer
@@ -312,3 +312,68 @@ class VorteSSEResponse(StreamingResponse):
             headers=headers,
             **kwargs,
         )
+
+
+class VorteStreamResponse(Response):
+    """
+    Zero-copy streaming response that bypasses Starlette/FastAPI overhead on the hot path.
+    """
+    def __init__(
+        self,
+        content: Any,
+        status_code: int = 200,
+        headers: Optional[Dict[str, str]] = None,
+        media_type: str = "application/json",
+    ):
+        super().__init__(content=None, status_code=status_code, headers=headers, media_type=media_type)
+        self.content = content
+
+    async def __call__(self, scope: Dict[str, Any], receive: Callable, send: Callable) -> None:
+        # Build raw low-level headers for ASGI start
+        headers_list = [
+            (b"content-type", self.media_type.encode("utf-8")),
+        ]
+        for k, v in self.headers.items():
+            headers_list.append((k.lower().encode("utf-8"), v.encode("utf-8")))
+
+        await send({
+            "type": "http.response.start",
+            "status": self.status_code,
+            "headers": headers_list,
+        })
+
+        if isinstance(self.content, (bytes, bytearray)):
+            # Direct binary write: one-shot fast stream
+            await send({
+                "type": "http.response.body",
+                "body": self.content,
+                "more_body": False,
+            })
+        elif isinstance(self.content, str):
+            await send({
+                "type": "http.response.body",
+                "body": self.content.encode("utf-8"),
+                "more_body": False,
+            })
+        else:
+            # We assume it is an async generator or iterable
+            async for chunk in self.content:
+                if isinstance(chunk, str):
+                    chunk_bytes = chunk.encode("utf-8")
+                elif isinstance(chunk, (bytes, bytearray)):
+                    chunk_bytes = chunk
+                else:
+                    chunk_bytes = FastSerializer.dumps(chunk)
+
+                await send({
+                    "type": "http.response.body",
+                    "body": chunk_bytes,
+                    "more_body": True,
+                })
+
+            await send({
+                "type": "http.response.body",
+                "body": b"",
+                "more_body": False,
+            })
+

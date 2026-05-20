@@ -31,8 +31,14 @@ def test_task_scheduler_background_submission():
         
     assert run_flag["called"] is True
     
-    # Verify stats reflect execution
-    stats = executor.scheduler_stats
+    # Verify stats reflect execution (wait for counter to increment on the background worker thread)
+    stats = None
+    for _ in range(100):
+        stats = executor.scheduler_stats
+        if stats is not None and stats["tasks_completed"] >= 1:
+            break
+        time.sleep(0.01)
+        
     if stats is not None:
         assert stats["tasks_submitted"] >= 1
         assert stats["tasks_completed"] >= 1

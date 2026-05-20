@@ -1,6 +1,8 @@
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use vorte_scheduler::{SchedulerConfig, Task, TaskPriority, TaskScheduler as InnerScheduler};
 
@@ -86,5 +88,27 @@ fn parse_priority(priority: &str) -> PyResult<TaskPriority> {
             "Invalid priority '{}'. Use: low, normal, high, critical",
             priority
         ))),
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyCancellationToken {
+    pub cancelled: Arc<AtomicBool>,
+}
+
+#[pymethods]
+impl PyCancellationToken {
+    #[new]
+    pub fn new() -> Self {
+        PyCancellationToken {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
     }
 }

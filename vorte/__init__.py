@@ -28,19 +28,20 @@ __license__ = "MIT"
 from vorte.core.app import Vorte
 from vorte.core.module import Module, ModuleRegistry, ModuleMeta, ModuleState, ModulePriority
 from vorte.core.config import Settings, settings
-from vorte.core.response import VorteResponse, success_response, error_response, VorteSSEResponse
+from vorte.core.response import VorteResponse, success_response, error_response, VorteSSEResponse, VorteStreamResponse
 from vorte.core.router import router
 from vorte.core.di import Container, Depends, inject, wire
 from vorte.core.serializer import FastSerializer, lazy_schema
 from vorte.core.executor import VorteExecutor, safe_route
 from vorte.core.typemirror import TypeMirror
 from vorte.core.sandbox import WasmSandbox, sandboxed
+from vorte.core.concurrency import VorteTaskGroup
 from vorte.engine import VorteEngine
-from vorte.modules.database.planner import N1Detector, select_related, QueryPlanner
+from vorte.modules.database.planner import QueryPlanner, select_related, N1Detector
 
 # All 21 built-in modules — directly importable
 from vorte.modules.auth import AuthModule
-from vorte.modules.database import DatabaseModule
+from vorte.modules.database import DatabaseModule, performance_mode, PreparedSQLManager
 from vorte.modules.ai import AIModule
 from vorte.modules.agents import AgentsModule
 from vorte.modules.cache import CacheModule
@@ -75,6 +76,7 @@ __all__ = [
     "success_response",
     "error_response",
     "VorteSSEResponse",
+    "VorteStreamResponse",
     "router",
     "Container",
     "Depends",
@@ -87,6 +89,7 @@ __all__ = [
     # Concurrency
     "VorteExecutor",
     "safe_route",
+    "VorteTaskGroup",
     # Type Mirror
     "TypeMirror",
     # Sandbox
@@ -99,6 +102,8 @@ __all__ = [
     # Built-in Modules
     "AuthModule",
     "DatabaseModule",
+    "performance_mode",
+    "PreparedSQLManager",
     "AIModule",
     "AgentsModule",
     "CacheModule",

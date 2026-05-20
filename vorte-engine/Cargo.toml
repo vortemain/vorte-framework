@@ -8,6 +8,7 @@ members = [
     "crates/vorte-queue",
     "crates/vorte-serde",
     "crates/vorte-py",
+    "crates/vorte-graph",
 ]
 
 [workspace.package]

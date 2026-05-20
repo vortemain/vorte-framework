@@ -154,3 +154,63 @@ async def test_developer_vs_performance_mode():
         assert len(dev_author["books"]) == len(perf_author["books"])
         assert dev_author["books"][0]["title"] == perf_author["books"][0]["title"]
         assert dev_author["books"][0]["reviews"][0]["text"] == perf_author["books"][0]["reviews"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_automated_performance_mode_decorator():
+    """Verify that the automated @performance_mode decorator and VorteStreamResponse stream correct data on SQLite."""
+    from vorte import Vorte, performance_mode, select_related
+    from fastapi import Request
+
+    app = Vorte(auto_load=False)
+    db = DatabaseModule(
+        url="sqlite+aiosqlite:///:memory:",
+        auto_create_tables=False,
+    )
+    app.register(db)
+    
+    router = VorteAPIRouter()
+    
+    # 1. Define a route with the automated @performance_mode decorator
+    @router.get("/decorated-authors")
+    @select_related("books", "books.reviews")
+    @performance_mode
+    async def get_decorated_authors(request: Request):
+        return TestAuthor
+
+    app.include_router(router)
+    
+    # Initialize and seed database
+    async with db.connection.engine.begin() as conn:
+        await conn.run_sync(TestAppBase.metadata.create_all)
+        
+    async with db.connection.session() as session:
+        author = TestAuthor(name="Author Decorator")
+        session.add(author)
+        await session.flush()
+        
+        book = TestBook(title="Book Decorator", author_id=author.id)
+        session.add(book)
+        await session.flush()
+        
+        review = TestReview(text="Love the decorator!", book_id=book.id)
+        session.add(review)
+        await session.flush()
+        await session.commit()
+        
+    async with VorteTestClient(app) as client:
+        # Fetch via @performance_mode route
+        resp = await client.get("/decorated-authors")
+        assert resp.status_code == 200
+        
+        data = resp.json_data
+        assert isinstance(data, list)
+        assert len(data) == 1
+        
+        author_data = data[0]
+        assert author_data["name"] == "Author Decorator"
+        assert len(author_data["books"]) == 1
+        assert author_data["books"][0]["title"] == "Book Decorator"
+        assert len(author_data["books"][0]["reviews"]) == 1
+        assert author_data["books"][0]["reviews"][0]["text"] == "Love the decorator!"
+

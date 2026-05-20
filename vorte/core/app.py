@@ -196,6 +196,9 @@ class Vorte:
             **kwargs,
         )
         
+        self.fastapi.vorte = self
+        self.fastapi.modules = self._module_registry
+        
         # Register built-in middleware
         self._setup_middleware()
         
@@ -309,6 +312,54 @@ class Vorte:
                 "modules_loaded": len(self._module_registry.get_all()),
                 "routes": len(self.get_routes()),
             })
+
+        @self.fastapi.get("/_vorte/metrics", include_in_schema=False)
+        async def prometheus_metrics():
+            """Expose thread-safe Prometheus metrics."""
+            try:
+                from vorte._vorte_engine import MetricsCollector
+                mc = MetricsCollector()
+                serialization_time = mc.serialization_time_ns
+                database_wait = mc.database_wait_time_ns
+                scheduling_latency = mc.scheduling_latency_ns
+                event_loop_lag = mc.event_loop_lag_ns
+                buffered_spans = mc.buffered
+                capacity = mc.capacity
+            except ImportError:
+                serialization_time = 0
+                database_wait = 0
+                scheduling_latency = 0
+                event_loop_lag = 0
+                buffered_spans = 0
+                capacity = 0
+
+            lines = [
+                "# HELP vorte_serialization_time_ns Total JSON/MessagePack/CBOR serialization time in nanoseconds",
+                "# TYPE vorte_serialization_time_ns counter",
+                f"vorte_serialization_time_ns {serialization_time}",
+                "",
+                "# HELP vorte_database_wait_time_ns Total database query execution wait time in nanoseconds",
+                "# TYPE vorte_database_wait_time_ns counter",
+                f"vorte_database_wait_time_ns {database_wait}",
+                "",
+                "# HELP vorte_scheduling_latency_ns Total scheduler worker task queue wait/scheduling latency in nanoseconds",
+                "# TYPE vorte_scheduling_latency_ns counter",
+                f"vorte_scheduling_latency_ns {scheduling_latency}",
+                "",
+                "# HELP vorte_event_loop_lag_ns Total event-loop lag / scheduling latency in nanoseconds",
+                "# TYPE vorte_event_loop_lag_ns counter",
+                f"vorte_event_loop_lag_ns {event_loop_lag}",
+                "",
+                "# HELP vorte_buffered_spans_total Number of request trace spans currently in the native ring buffer",
+                "# TYPE vorte_buffered_spans_total gauge",
+                f"vorte_buffered_spans_total {buffered_spans}",
+                "",
+                "# HELP vorte_metrics_buffer_capacity_total Maximum ring buffer capacity of the metrics collector",
+                "# TYPE vorte_metrics_buffer_capacity_total gauge",
+                f"vorte_metrics_buffer_capacity_total {capacity}"
+            ]
+            content = "\n".join(lines) + "\n"
+            return Response(content=content, media_type="text/plain; version=0.0.4; charset=utf-8")
     
     def _setup_dashboard_api(self) -> None:
         """Setup dashboard API routes for the admin panel."""

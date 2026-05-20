@@ -13,43 +13,71 @@ pub const FORMAT_PROTOBUF: u8 = 3;
 const POOL_CAPACITY: usize = 256;
 const INITIAL_BUFFER_SIZE: usize = 4096;
 
+const BUCKET_SIZES: [usize; 4] = [4096, 16384, 65536, 262144];
+
+fn bucket_idx(capacity: usize) -> usize {
+    if capacity <= 4096 {
+        0
+    } else if capacity <= 16384 {
+        1
+    } else if capacity <= 65536 {
+        2
+    } else {
+        3
+    }
+}
+
 pub struct BufferPool {
-    pool: Mutex<VecDeque<Vec<u8>>>,
+    buckets: [Mutex<VecDeque<Vec<u8>>>; 4],
 }
 
 impl BufferPool {
     pub fn new() -> Self {
         Self {
-            pool: Mutex::new(VecDeque::with_capacity(POOL_CAPACITY)),
+            buckets: [
+                Mutex::new(VecDeque::with_capacity(64)),
+                Mutex::new(VecDeque::with_capacity(64)),
+                Mutex::new(VecDeque::with_capacity(64)),
+                Mutex::new(VecDeque::with_capacity(64)),
+            ],
         }
     }
 
     pub fn acquire(self: &Arc<Self>) -> PooledBuffer {
-        let buf = self.pool
+        self.acquire_with_capacity(4096)
+    }
+
+    pub fn acquire_with_capacity(self: &Arc<Self>, capacity: usize) -> PooledBuffer {
+        let idx = bucket_idx(capacity);
+        let buf = self.buckets[idx]
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .pop_front()
-            .unwrap_or_else(|| Vec::with_capacity(INITIAL_BUFFER_SIZE));
+            .unwrap_or_else(|| Vec::with_capacity(BUCKET_SIZES[idx]));
         PooledBuffer {
             buf,
+            bucket_idx: idx,
             pool: Some(self.clone()),
         }
     }
 
-    pub fn release(&self, mut buf: Vec<u8>) {
+    pub fn release(&self, mut buf: Vec<u8>, bucket_idx: usize) {
         buf.clear();
-        if let Ok(mut pool) = self.pool.lock() {
-            if pool.len() < POOL_CAPACITY {
-                pool.push_back(buf);
+        if let Ok(mut bucket) = self.buckets[bucket_idx].lock() {
+            if bucket.len() < 64 {
+                bucket.push_back(buf);
             }
         }
     }
 
     pub fn pool_size(&self) -> usize {
-        self.pool
-            .lock()
-            .map(|p| p.len())
-            .unwrap_or(0)
+        let mut total = 0;
+        for bucket in &self.buckets {
+            if let Ok(b) = bucket.lock() {
+                total += b.len();
+            }
+        }
+        total
     }
 }
 
@@ -61,6 +89,7 @@ impl Default for BufferPool {
 
 pub struct PooledBuffer {
     pub buf: Vec<u8>,
+    pub bucket_idx: usize,
     pool: Option<Arc<BufferPool>>,
 }
 
@@ -81,7 +110,7 @@ impl Drop for PooledBuffer {
     fn drop(&mut self) {
         if let Some(pool) = self.pool.take() {
             let buf = std::mem::take(&mut self.buf);
-            pool.release(buf);
+            pool.release(buf, self.bucket_idx);
         }
     }
 }
@@ -103,6 +132,10 @@ impl SerdeEngine {
     /// this to bypass the intermediate serde_json::Value allocation.
     pub fn pool_acquire(&self) -> PooledBuffer {
         self.pool.acquire()
+    }
+
+    pub fn pool_acquire_with_capacity(&self, capacity: usize) -> PooledBuffer {
+        self.pool.acquire_with_capacity(capacity)
     }
 
 

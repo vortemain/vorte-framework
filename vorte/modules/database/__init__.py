@@ -55,6 +55,7 @@ from vorte.modules.database.query import (
     RecordNotFoundError,
 )
 from vorte.modules.database.seeders import BaseSeeder, SeederManager
+from vorte.modules.database.performance import performance_mode, PreparedSQLManager
 
 __all__ = [
     # Module
@@ -91,4 +92,7 @@ __all__ = [
     # Seeders
     "BaseSeeder",
     "SeederManager",
+    # Performance Mode
+    "performance_mode",
+    "PreparedSQLManager",
 ]
