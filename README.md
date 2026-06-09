@@ -1,12 +1,16 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/vortemain/vorte-framework/main/assets/logos/logo-light.png" alt="Vorte Framework Logo" width="500">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vortemain/vorte-framework/main/assets/logos/logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/vortemain/vorte-framework/main/assets/logos/logo-light.png">
+    <img alt="Vorte Framework Logo" src="https://raw.githubusercontent.com/vortemain/vorte-framework/main/assets/logos/logo-light.png" width="320">
+  </picture>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/Rust-Engine-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Engine">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License">
-  <img src="https://img.shields.io/badge/Version-1.1.2-blue?style=for-the-badge" alt="Version 1.1.2">
+  <img src="https://img.shields.io/badge/Version-1.1.3-blue?style=for-the-badge" alt="Version 1.1.3">
 </p>
 
 # Vorte Framework
