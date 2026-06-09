@@ -197,3 +197,45 @@ async def test_metrics_and_dashboard_api():
         assert resp.status_code == 200
         assert resp.json_data["app"]["name"] == "VorteApp"
         assert resp.json_data["metrics"]["total"] == 2
+
+
+def test_cli_version(capsys):
+    """Test vorte --version and -v outputs."""
+    from vorte.cli.main import cli
+    import sys
+    
+    # Mock sys.argv
+    orig_argv = sys.argv
+    try:
+        sys.argv = ["vorte", "--version"]
+        cli()
+        captured = capsys.readouterr()
+        assert "Vorte Framework v" in captured.out
+        
+        sys.argv = ["vorte", "-v"]
+        cli()
+        captured = capsys.readouterr()
+        assert "Vorte Framework v" in captured.out
+    finally:
+        sys.argv = orig_argv
+
+
+def test_non_api_route_registration():
+    """Test that Route, WebSocketRoute, and Mount register properly."""
+    from fastapi import FastAPI
+    from starlette.routing import Route, WebSocketRoute, Mount
+    from vorte.engine import VorteEngine
+    
+    app = FastAPI()
+    
+    async def dummy_endpoint():
+        return {"ok": True}
+        
+    app.routes.append(Route("/starlette-route", dummy_endpoint, methods=["GET"]))
+    app.routes.append(WebSocketRoute("/ws-route", dummy_endpoint))
+    app.routes.append(Mount("/mount-route", app=FastAPI()))
+    
+    engine = VorteEngine(app)
+    # 1 route for Route + 1 for WebSocketRoute + 14 for Mount = 16
+    assert engine.route_count >= 16
+

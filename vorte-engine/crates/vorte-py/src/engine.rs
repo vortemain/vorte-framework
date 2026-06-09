@@ -195,7 +195,7 @@ struct RouteInfo {
     path: String,
 }
 
-fn extract_routes_from_app(_py: Python, app: &Bound<'_, PyAny>) -> PyResult<Vec<RouteInfo>> {
+fn extract_routes_from_app(py: Python, app: &Bound<'_, PyAny>) -> PyResult<Vec<RouteInfo>> {
     let mut routes = Vec::new();
 
     let app_routes = if app.hasattr("fastapi")? {
@@ -206,11 +206,16 @@ fn extract_routes_from_app(_py: Python, app: &Bound<'_, PyAny>) -> PyResult<Vec<
         return Ok(routes);
     };
 
+    let starlette_routing = py.import_bound(pyo3::intern!(py, "starlette.routing"))?;
+    let route_class = starlette_routing.getattr("Route")?;
+    let ws_route_class = starlette_routing.getattr("WebSocketRoute")?;
+    let mount_class = starlette_routing.getattr("Mount")?;
+
     let route_list = app_routes.iter()?;
 
     for item in route_list {
         let route = item?;
-        if route.hasattr("methods")? && route.hasattr("path")? {
+        if route.is_instance(&route_class)? {
             let path: String = route.getattr("path")?.extract()?;
             let methods: Option<std::collections::HashSet<String>> = route.getattr("methods")?.extract()?;
 
@@ -221,6 +226,25 @@ fn extract_routes_from_app(_py: Python, app: &Bound<'_, PyAny>) -> PyResult<Vec<
                         path: path.clone(),
                     });
                 }
+            }
+        } else if route.is_instance(&ws_route_class)? {
+            let path: String = route.getattr("path")?.extract()?;
+            routes.push(RouteInfo {
+                method: "GET".to_string(),
+                path,
+            });
+        } else if route.is_instance(&mount_class)? {
+            let path: String = route.getattr("path")?.extract()?;
+            let methods = vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"];
+            for method in methods {
+                routes.push(RouteInfo {
+                    method: method.to_string(),
+                    path: path.clone(),
+                });
+                routes.push(RouteInfo {
+                    method: method.to_string(),
+                    path: format!("{}/{{path:path}}", path.trim_end_matches('/')),
+                });
             }
         }
     }

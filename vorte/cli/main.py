@@ -890,6 +890,15 @@ def cli():
         return
 
     command = args[0]
+    if command in ("--version", "-v"):
+        try:
+            import vorte
+            version = vorte.__version__
+        except Exception:
+            version = "1.1.0"
+        print(f"Vorte Framework v{version}")
+        return
+
     sub_args = args[1:]
 
     commands = {
@@ -968,8 +977,13 @@ def cli():
 
 
 def _print_help():
-    print("""
-  Vorte Framework CLI v1.0.0
+    try:
+        import vorte
+        version = vorte.__version__
+    except Exception:
+        version = "1.1.0"
+    print(f"""
+  Vorte Framework CLI v{version}
   ==========================
 
   USAGE:

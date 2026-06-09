@@ -10,22 +10,16 @@ except ImportError as e:
     ) from e
 
 
-def _worker_target(script_path, module_name, app_name, h, p, worker_sock):
+def _worker_target(project_dir, module_name, app_name, h, p, worker_sock):
     import os
     import sys
     import importlib
-    
-    try:
-        # Disable watchfiles/reloader inside child if any
-        os.environ["VORTE_APP_DEBUG"] = "false"
-    except Exception:
-        pass
     
     # Detach the socket handle/descriptor (automatically duplicated by multiprocessing)
     fd = worker_sock.detach()
     
     # Re-import the application object in the child process
-    sys.path.insert(0, os.path.dirname(os.path.abspath(script_path)))
+    sys.path.insert(0, project_dir)
     mod = importlib.import_module(module_name)
     app_obj = None
     if app_name:
@@ -65,11 +59,17 @@ class VorteEngine:
             actual_app = app.fastapi
 
         if hasattr(actual_app, 'routes'):
-            from fastapi.routing import APIRoute
+            from starlette.routing import Route, WebSocketRoute, Mount
             for route in actual_app.routes:
-                if isinstance(route, APIRoute):
+                if isinstance(route, Route):
                     for method in (route.methods or set()):
                         self._engine.add_route(method, route.path)
+                elif isinstance(route, WebSocketRoute):
+                    self._engine.add_route("GET", route.path)
+                elif isinstance(route, Mount):
+                    for method in ("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"):
+                        self._engine.add_route(method, route.path)
+                        self._engine.add_route(method, route.path.rstrip("/") + "/{path:path}")
 
     def add_route(self, method: str, path: str):
         self._engine.add_route(method, path)
@@ -117,14 +117,38 @@ class VorteEngine:
         print(f"  [Vorte Multi-Process] Spawning {run_workers} worker processes...")
 
         import sys
-        script_path = os.path.abspath(sys.argv[0])
-        module_name = os.path.splitext(os.path.basename(script_path))[0]
+        
+        # Dynamically determine the module name and project directory that defined actual_app
+        project_dir = os.getcwd()
+        module_name = None
+        
+        for name, module in list(sys.modules.items()):
+            if module and hasattr(module, "__file__") and name != "vorte.cli.main":
+                try:
+                    for k, v in vars(module).items():
+                        if v is actual_app:
+                            module_name = name
+                            project_dir = os.path.dirname(os.path.abspath(module.__file__))
+                            break
+                except Exception:
+                    pass
+            if module_name:
+                break
+                
+        if not module_name:
+            module_name = "main"
+            
+        if module_name == "__main__":
+            main_file = getattr(sys.modules["__main__"], "__file__", None)
+            if main_file:
+                module_name = os.path.splitext(os.path.basename(main_file))[0]
         
         # Try to find the app variable name in the main module
         app_name = "app"
         try:
-            import __main__
-            for k, v in vars(__main__).items():
+            import importlib
+            mod = importlib.import_module(module_name)
+            for k, v in vars(mod).items():
                 if v is actual_app:
                     app_name = k
                     break
@@ -137,7 +161,7 @@ class VorteEngine:
             for i in range(run_workers):
                 p = multiprocessing.Process(
                     target=_worker_target,
-                    args=(script_path, module_name, app_name, run_host, run_port, sock),
+                    args=(project_dir, module_name, app_name, run_host, run_port, sock),
                 )
                 p.daemon = True
                 p.start()
