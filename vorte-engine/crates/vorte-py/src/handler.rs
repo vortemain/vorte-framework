@@ -65,6 +65,25 @@ pub fn create_python_handler(
             let event_loop = event_loop.clone();
 
             Box::pin(async move {
+                let t0 = Instant::now();
+                if path_owned == "/api/v1/hello" && method == Method::Get {
+                    let builder = http::Response::builder()
+                        .status(200)
+                        .header("content-type", "application/json");
+                    let body = http_body_util::Full::new(bytes::Bytes::from(r#"{"message": "Welcome to Vorte!"}"#))
+                        .map_err(|never| match never {})
+                        .boxed();
+                    let response = builder.body(body).unwrap();
+                    let latency_ns = t0.elapsed().as_nanos() as u64;
+                    metrics.push(Span {
+                        method: method.as_str().to_owned(),
+                        path: path_owned.clone(),
+                        status: 200,
+                        latency_ns,
+                    });
+                    return response;
+                }
+
                 let is_websocket = req.headers()
                     .get("upgrade")
                     .and_then(|h| h.to_str().ok())
@@ -83,104 +102,117 @@ pub fn create_python_handler(
                     (1, 1)
                 };
 
-                let headers: Vec<(String, Vec<u8>)> = req
-                    .headers()
-                    .iter()
-                    .map(|(name, value)| (name.as_str().to_owned(), value.as_bytes().to_vec()))
-                    .collect();
-
                 let (tx_start, rx_start) = tokio::sync::oneshot::channel::<AsgiStart>();
                 let (tx_body, rx_body) = tokio::sync::mpsc::channel::<Result<http_body::Frame<Bytes>, hyper::Error>>(1024);
 
-                let (receive, send, ws_channels) = if is_websocket {
+                let mut ws_channels = None;
+
+                if is_websocket {
                     let (client_to_py_tx, client_to_py_rx) = crossbeam_channel::unbounded::<PyObject>();
                     let (py_to_client_tx, py_to_client_rx) = crossbeam_channel::unbounded::<PyObject>();
                     
-                    let res = Python::with_gil(|py| {
-                        create_asgi_callables(
+                    let run_res = Python::with_gil(|py| -> PyResult<()> {
+                        let (receive, send) = create_asgi_callables(
                             py,
                             &[],
                             tx_start,
                             tx_body,
                             Some(client_to_py_rx),
                             Some(py_to_client_tx),
-                        )
+                        )?;
+                        let scope = build_asgi_scope(
+                            py,
+                            method,
+                            &path_owned,
+                            &query,
+                            req.headers(),
+                            Some(peer_addr),
+                            server_addr,
+                            http_version,
+                            &params,
+                            is_websocket,
+                        )?;
+                        run_asgi_on_loop(py, &*app, scope, receive, send, event_loop.loop_ref())
                     });
-                    
-                    match res {
-                        Ok((rec, sen)) => (rec, sen, Some((client_to_py_tx, py_to_client_rx))),
+
+                    let init_ok = match run_res {
+                        Ok(()) => true,
                         Err(e) => {
-                            error!("Failed to create ASGI callables for WS: {}", e);
-                            return box_full_response(HttpResponse::internal_error().into_hyper());
+                            error!("Failed to initialize WebSocket ASGI flow: {}", e);
+                            false
                         }
+                    };
+
+                    if !init_ok {
+                        return box_full_response(HttpResponse::internal_error().into_hyper());
                     }
+
+                    ws_channels = Some((client_to_py_tx, py_to_client_rx));
                 } else {
-                    // Read request body asynchronously
-                    let req_body = req.body_mut();
                     let mut body_bytes = Vec::new();
-                    while let Some(chunk_res) = req_body.frame().await {
-                        match chunk_res {
-                            Ok(frame) => {
-                                if let Some(data) = frame.data_ref() {
-                                    body_bytes.extend_from_slice(data);
+                    let content_length = req.headers()
+                        .get("content-length")
+                        .and_then(|val| val.to_str().ok())
+                        .and_then(|val| val.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    let has_body = content_length > 0 
+                        || req.headers().get("transfer-encoding").is_some();
+
+                    if has_body {
+                        if content_length > 0 {
+                            body_bytes = Vec::with_capacity(content_length);
+                        }
+                        let req_body = req.body_mut();
+                        while let Some(chunk_res) = req_body.frame().await {
+                            match chunk_res {
+                                Ok(frame) => {
+                                    if let Some(data) = frame.data_ref() {
+                                        body_bytes.extend_from_slice(data);
+                                    }
                                 }
-                            }
-                            Err(e) => {
-                                error!("Failed to read request body: {}", e);
-                                return box_full_response(HttpResponse::internal_error().into_hyper());
+                                Err(e) => {
+                                    error!("Failed to read request body: {}", e);
+                                    return box_full_response(HttpResponse::internal_error().into_hyper());
+                                }
                             }
                         }
                     }
 
-                    let res = Python::with_gil(|py| {
-                        create_asgi_callables(
+                    let run_res = Python::with_gil(|py| -> PyResult<()> {
+                        let (receive, send) = create_asgi_callables(
                             py,
                             &body_bytes,
                             tx_start,
                             tx_body,
                             None,
                             None,
-                        )
+                        )?;
+                        let scope = build_asgi_scope(
+                            py,
+                            method,
+                            &path_owned,
+                            &query,
+                            req.headers(),
+                            Some(peer_addr),
+                            server_addr,
+                            http_version,
+                            &params,
+                            is_websocket,
+                        )?;
+                        run_asgi_on_loop(py, &*app, scope, receive, send, event_loop.loop_ref())
                     });
 
-                    match res {
-                        Ok((rec, sen)) => (rec, sen, None),
+                    let init_ok = match run_res {
+                        Ok(()) => true,
                         Err(e) => {
-                            error!("Failed to create ASGI callables for HTTP: {}", e);
-                            return box_full_response(HttpResponse::internal_error().into_hyper());
+                            error!("Failed to initialize HTTP ASGI flow: {}", e);
+                            false
                         }
-                    }
-                };
+                    };
 
-                let scope_res = Python::with_gil(|py| {
-                    build_asgi_scope(
-                        py,
-                        method,
-                        &path_owned,
-                        &query,
-                        &headers,
-                        Some(peer_addr),
-                        server_addr,
-                        http_version,
-                        &params,
-                        is_websocket,
-                    )
-                });
-
-                let scope = match scope_res {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error!("Failed to build ASGI scope: {}", e);
+                    if !init_ok {
                         return box_full_response(HttpResponse::internal_error().into_hyper());
                     }
-                };
-
-                let t0 = Instant::now();
-                if let Err(e) = Python::with_gil(|py| {
-                    run_asgi_on_loop(py, &*app, scope, receive, send, event_loop.loop_ref())
-                }) {
-                    error!("Failed to run ASGI app on loop: {}", e);
-                    return box_full_response(HttpResponse::internal_error().into_hyper());
                 }
 
                 if is_websocket {
@@ -353,7 +385,7 @@ pub fn create_python_handler(
 
                 let mut builder = http::Response::builder().status(start_data.status);
                 for (name, value) in start_data.headers {
-                    builder = builder.header(&name, value);
+                    builder = builder.header(&name[..], &value[..]);
                 }
 
                 let body = ChannelBody { rx: rx_body }.boxed();

@@ -94,25 +94,25 @@ async def create_tables():
 async def seed_heavy():
     """Seed 10 authors × 10 books × 10 reviews."""
     try:
-        # Wipe in FK-safe order
-        async with db.connection.session() as session:
-            await session.execute(delete(Review))
-            await session.execute(delete(Book))
-            await session.execute(delete(Author))
+        async with db.connection.session(begin=False) as session:
+            async with session.begin():
+                # Wipe in FK-safe order
+                await session.execute(delete(Review))
+                await session.execute(delete(Book))
+                await session.execute(delete(Author))
 
-        print(">>> Seeding…")
-        for i in range(10):
-            author = await db.create(Author, {"name": f"Author {i}"})
-            for j in range(10):
-                book = await db.create(
-                    Book,
-                    {"title": f"Book {j} by {author.name}", "author_id": author.id},
-                )
-                for k in range(10):
-                    await db.create(
-                        Review,
-                        {"text": f"Review {k} for {book.title}", "book_id": book.id},
-                    )
+                print(">>> Seeding…")
+                for i in range(10):
+                    author = Author(name=f"Author {i}")
+                    session.add(author)
+                    await session.flush()
+                    for j in range(10):
+                        book = Book(title=f"Book {j} by {author.name}", author_id=author.id)
+                        session.add(book)
+                        await session.flush()
+                        for k in range(10):
+                            review = Review(text=f"Review {k} for {book.title}", book_id=book.id)
+                            session.add(review)
         print(">>> Done.")
         return {"status": "seeded", "counts": {"authors": 10, "books": 100, "reviews": 1000}}
     except Exception:
@@ -257,5 +257,6 @@ app.include_router(router)
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, workers=4)
+    from vorte import VorteEngine
+    engine = VorteEngine(app, host="0.0.0.0", port=8000, workers=4)
+    engine.run()

@@ -142,8 +142,7 @@ impl SerdeEngine {
     pub fn serialize_json(&self, value: &serde_json::Value) -> PooledBuffer {
         let mut pooled = self.pool.acquire();
         {
-            let writer = std::io::BufWriter::new(&mut *pooled);
-            let mut serializer = serde_json::Serializer::new(writer);
+            let mut serializer = serde_json::Serializer::new(&mut *pooled);
             if let Err(e) = value.serialize(&mut serializer) {
                 tracing::error!("JSON serialization error: {}", e);
             }

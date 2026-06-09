@@ -51,7 +51,7 @@ impl VorteEngine {
             .map_err(|e| PyValueError::new_err(e))
     }
 
-    #[pyo3(signature = (app, host="0.0.0.0".to_string(), port=8000u16, workers=0usize))]
+    #[pyo3(signature = (app, host="0.0.0.0".to_string(), port=8000u16, workers=0usize, sock_fd=None))]
     fn run(
         &mut self,
         py: Python,
@@ -59,6 +59,7 @@ impl VorteEngine {
         host: String,
         port: u16,
         workers: usize,
+        sock_fd: Option<i64>,
     ) -> PyResult<()> {
         if self.running.swap(true, Ordering::SeqCst) {
             return Err(PyRuntimeError::new_err("Server is already running"));
@@ -77,14 +78,6 @@ impl VorteEngine {
 
         router.freeze();
 
-        let event_loop_handle = EventLoopHandle::start(py)?;
-        let event_loop_shutdown = event_loop_handle.clone();
-
-        let app_py: Py<PyAny> = app.unbind();
-        let addr: SocketAddr = format!("{}:{}", host, port)
-            .parse()
-            .map_err(|e| PyValueError::new_err(format!("Invalid address: {}", e)))?;
-
         let worker_count = if workers > 0 {
             workers
         } else {
@@ -93,7 +86,37 @@ impl VorteEngine {
                 .unwrap_or(4)
         };
 
+        let event_loop_handle = EventLoopHandle::start(py, worker_count)?;
+        let event_loop_shutdown = event_loop_handle.clone();
+
+        let app_py: Py<PyAny> = app.unbind();
+        let addr: SocketAddr = format!("{}:{}", host, port)
+            .parse()
+            .map_err(|e| PyValueError::new_err(format!("Invalid address: {}", e)))?;
+
         let metrics = self.metrics_buffer.clone();
+
+        let std_listener = if let Some(fd) = sock_fd {
+            #[cfg(windows)]
+            {
+                use std::os::windows::io::FromRawSocket;
+                let listener = unsafe { std::net::TcpListener::from_raw_socket(fd as std::os::windows::io::RawSocket) };
+                Some(listener)
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::io::FromRawFd;
+                let listener = unsafe { std::net::TcpListener::from_raw_fd(fd as std::os::unix::io::RawFd) };
+                Some(listener)
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                let _ = fd;
+                None
+            }
+        } else {
+            None
+        };
 
         py.allow_threads(|| {
             let rt = tokio::runtime::Builder::new_multi_thread()
@@ -104,12 +127,19 @@ impl VorteEngine {
                     PyRuntimeError::new_err(format!("Failed to create runtime: {}", e))
                 })?;
 
+            *crate::bridge::TOKIO_HANDLE.write() = Some(rt.handle().clone());
+
             let handler = create_python_handler(app_py, metrics, event_loop_handle);
 
-            let server = vorte_core::Server::builder()
+            let mut builder = vorte_core::Server::builder()
                 .addr(addr)
-                .worker_threads(worker_count)
-                .build_with_router_and_handler(router, handler);
+                .worker_threads(worker_count);
+
+            if let Some(listener) = std_listener {
+                builder = builder.listener(listener);
+            }
+
+            let server = builder.build_with_router_and_handler(router, handler);
 
             rt.block_on(async {
                 if let Err(e) = server.run().await {
@@ -182,7 +212,7 @@ fn extract_routes_from_app(_py: Python, app: &Bound<'_, PyAny>) -> PyResult<Vec<
         let route = item?;
         if route.hasattr("methods")? && route.hasattr("path")? {
             let path: String = route.getattr("path")?.extract()?;
-            let methods: Option<Vec<String>> = route.getattr("methods")?.extract()?;
+            let methods: Option<std::collections::HashSet<String>> = route.getattr("methods")?.extract()?;
 
             if let Some(methods) = methods {
                 for method in methods {

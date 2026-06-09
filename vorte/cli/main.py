@@ -27,8 +27,9 @@ async def hello():
     return {"message": "Welcome to Vorte!"}
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    from vorte import VorteEngine
+    engine = VorteEngine(app)
+    engine.run(host="0.0.0.0", port=8000)
 '''
 
 AI_SAAS_TEMPLATE = '''
@@ -53,8 +54,9 @@ async def hello():
     return {"message": "Welcome to Vorte AI SaaS!"}
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    from vorte import VorteEngine
+    engine = VorteEngine(app)
+    engine.run(host="0.0.0.0", port=8000)
 '''
 
 DOCKER_COMPOSE_TEMPLATE = '''version: '3.8'
@@ -212,9 +214,26 @@ def cmd_new(name: str, template: str = "minimal"):
     print(f"    vorte serve --watch")
 
 
+def _get_space_free_path(path_str: str) -> str:
+    if " " not in path_str:
+        return path_str
+    try:
+        import ctypes
+        from ctypes import wintypes
+        gp = ctypes.windll.kernel32.GetShortPathNameW
+        gp.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        gp.restype = wintypes.DWORD
+        buf = ctypes.create_unicode_buffer(512)
+        gp(path_str, buf, 512)
+        if buf.value:
+            return buf.value
+    except Exception:
+        pass
+    return path_str
+
+
 def cmd_serve(host: str = "0.0.0.0", port: int = 8000, watch: bool = False, workers: int = 1):
     """Start the production or development server."""
-    import uvicorn
     env = os.getenv("VORTE_APP_ENV", "development")
     os.environ.setdefault("VORTE_APP_ENV", env)
     
@@ -233,11 +252,46 @@ def cmd_serve(host: str = "0.0.0.0", port: int = 8000, watch: bool = False, work
         print("  Starting Vorte in DEVELOPMENT mode...")
 
     if watch and env != "production":
-        uvicorn.run("main:app", host=host, port=port, reload=True)
-    else:
-        # In production, we use multiple workers for better performance
-        actual_workers = workers if env != "production" else max(workers, 4)
-        uvicorn.run("main:app", host=host, port=port, workers=actual_workers)
+        import watchfiles
+        
+        python_path = sys.executable
+        if " " in python_path and sys.platform == "win32":
+            python_path = _get_space_free_path(python_path)
+            
+        cmd = f"{python_path} -m vorte.cli.main serve --host={host} --port={port} --workers={workers}"
+        
+        def reload_callback(changes):
+            print(f"\n  [Vorte Watcher] File changes detected. Reloading server...")
+            for change, path in changes:
+                print(f"    - {change.name.upper()}: {path}")
+
+        print(f"  [Vorte Watcher] Starting application in watch mode...")
+        print(f"  [Vorte Watcher] Watching directory: {os.getcwd()}")
+        
+        try:
+            watchfiles.run_process(
+                os.getcwd(),
+                target=cmd,
+                target_type="command",
+                callback=reload_callback
+            )
+        except KeyboardInterrupt:
+            print("  [Vorte Watcher] Stopped watching.")
+        return
+
+    import importlib
+    sys.path.insert(0, os.getcwd())
+    try:
+        module = importlib.import_module("main")
+        app = getattr(module, "app")
+    except Exception as e:
+        print(f"Error: Could not import 'app' from 'main.py': {e}")
+        sys.exit(1)
+
+    from vorte.engine import VorteEngine
+    actual_workers = workers if env != "production" else max(workers, 4)
+    engine = VorteEngine(app)
+    engine.run(host=host, port=port, workers=actual_workers)
 
 
 def cmd_routes():

@@ -96,6 +96,13 @@ impl MatchResult {
     }
 
     pub fn param_value<'a>(&self, key: &str, path: &'a str) -> Option<&'a str> {
-        self.params.get(key).map(|p| p.value(path))
+        self.params.get(key).map(|p| {
+            let mut start = p.value_start as usize;
+            if path.starts_with('/') {
+                start += 1;
+            }
+            let end = start + p.value_len as usize;
+            &path[start..end]
+        })
     }
 }

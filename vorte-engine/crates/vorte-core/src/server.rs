@@ -22,6 +22,7 @@ pub struct Server {
     _tcp_reuseaddr: bool,
     shutdown_timeout: Duration,
     enable_http2: bool,
+    listener: Option<std::net::TcpListener>,
 }
 
 impl Server {
@@ -34,7 +35,12 @@ impl Server {
     }
 
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let listener = TcpListener::bind(self.addr).await?;
+        let listener = if let Some(std_listener) = self.listener {
+            std_listener.set_nonblocking(true)?;
+            TcpListener::from_std(std_listener)?
+        } else {
+            TcpListener::bind(self.addr).await?
+        };
         let local_addr = listener.local_addr()?;
 
         info!(
@@ -107,6 +113,7 @@ pub struct ServerBuilder {
     _tcp_reuseaddr: bool,
     shutdown_timeout: Duration,
     enable_http2: bool,
+    listener: Option<std::net::TcpListener>,
 }
 
 impl Default for ServerBuilder {
@@ -120,6 +127,7 @@ impl Default for ServerBuilder {
             _tcp_reuseaddr: true,
             shutdown_timeout: Duration::from_secs(30),
             enable_http2: false,
+            listener: None,
         }
     }
 }
@@ -172,6 +180,11 @@ impl ServerBuilder {
         self
     }
 
+    pub fn listener(mut self, listener: std::net::TcpListener) -> Self {
+        self.listener = Some(listener);
+        self
+    }
+
     pub fn build(self) -> Server {
         Server {
             addr: self.addr,
@@ -184,6 +197,7 @@ impl ServerBuilder {
             _tcp_reuseaddr: self._tcp_reuseaddr,
             shutdown_timeout: self.shutdown_timeout,
             enable_http2: self.enable_http2,
+            listener: self.listener,
         }
     }
 
@@ -199,6 +213,7 @@ impl ServerBuilder {
             _tcp_reuseaddr: self._tcp_reuseaddr,
             shutdown_timeout: self.shutdown_timeout,
             enable_http2: self.enable_http2,
+            listener: self.listener,
         }
     }
 
@@ -216,6 +231,7 @@ impl ServerBuilder {
             _tcp_reuseaddr: self._tcp_reuseaddr,
             shutdown_timeout: self.shutdown_timeout,
             enable_http2: self.enable_http2,
+            listener: self.listener,
         }
     }
 }

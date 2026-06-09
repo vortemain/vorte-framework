@@ -347,42 +347,59 @@ impl Router {
             return Vec::new();
         }
 
-        path.split('/')
-            .filter(|s| !s.is_empty())
-            .map(|s| {
-                if s.starts_with('{') && s.ends_with('}') {
-                    let inner = &s[1..s.len() - 1];
-                    if let Some(colon_pos) = inner.find(':') {
-                        let name = &inner[..colon_pos];
-                        if inner[colon_pos + 1..].starts_with("path") {
-                            Segment {
-                                seg_type: SegType::Wildcard,
-                                value: Vec::new(),
-                                param_name: name.to_owned(),
-                            }
-                        } else {
-                            Segment {
-                                seg_type: SegType::Param,
-                                value: Vec::new(),
-                                param_name: name.to_owned(),
-                            }
-                        }
+        let mut segments = Vec::new();
+        let mut start = 0;
+
+        while let Some(brace_start) = path[start..].find('{') {
+            let brace_start_idx = start + brace_start;
+            if brace_start_idx > start {
+                segments.push(Segment {
+                    seg_type: SegType::Static,
+                    value: path[start..brace_start_idx].as_bytes().to_vec(),
+                    param_name: String::new(),
+                });
+            }
+
+            if let Some(brace_end) = path[brace_start_idx..].find('}') {
+                let brace_end_idx = brace_start_idx + brace_end;
+                let inner = &path[brace_start_idx + 1..brace_end_idx];
+                if let Some(colon_pos) = inner.find(':') {
+                    let name = &inner[..colon_pos];
+                    if inner[colon_pos + 1..].starts_with("path") {
+                        segments.push(Segment {
+                            seg_type: SegType::Wildcard,
+                            value: Vec::new(),
+                            param_name: name.to_owned(),
+                        });
                     } else {
-                        Segment {
+                        segments.push(Segment {
                             seg_type: SegType::Param,
                             value: Vec::new(),
-                            param_name: inner.to_owned(),
-                        }
+                            param_name: name.to_owned(),
+                        });
                     }
                 } else {
-                    Segment {
-                        seg_type: SegType::Static,
-                        value: s.as_bytes().to_vec(),
-                        param_name: String::new(),
-                    }
+                    segments.push(Segment {
+                        seg_type: SegType::Param,
+                        value: Vec::new(),
+                        param_name: inner.to_owned(),
+                    });
                 }
-            })
-            .collect()
+                start = brace_end_idx + 1;
+            } else {
+                break;
+            }
+        }
+
+        if start < path.len() {
+            segments.push(Segment {
+                seg_type: SegType::Static,
+                value: path[start..].as_bytes().to_vec(),
+                param_name: String::new(),
+            });
+        }
+
+        segments
     }
 
     pub fn route_count(&self) -> u32 {

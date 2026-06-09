@@ -199,7 +199,7 @@ async def main():
         print("===============================================================================================")
         
         # 8. Save results as markdown artifact
-        report_path = r"C:\Users\kibuc\.gemini\antigravity\brain\b7a5bb3a-7c98-4418-b2ee-b2cfe5260bf6\benchmark_report.md"
+        report_path = r"C:\Users\kibuc\.gemini\antigravity\brain\c5011e89-f43c-45c4-88a5-4a3e67f926e4\benchmark_report.md"
         print(f"\n[+] Saving detailed report to: {report_path}")
         
         report_content = f"""# Vorte Framework High-Load Relational Performance Report

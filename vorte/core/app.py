@@ -178,12 +178,24 @@ class Vorte:
                 await hook()
             # Build TypeMirror from registered routes
             self._type_mirror = TypeMirror.from_app(self)
-            yield
-            # ---- shutdown ----
-            for hook in self._shutdown_hooks:
-                await hook()
-            await self._module_registry.shutdown_all()
-            self._executor.shutdown(wait=False)
+            
+            # Start event loop lag detection in background
+            lag_task = asyncio.create_task(self._detect_event_loop_lag())
+            
+            try:
+                yield
+            finally:
+                # ---- shutdown ----
+                lag_task.cancel()
+                try:
+                    await lag_task
+                except asyncio.CancelledError:
+                    pass
+                
+                for hook in self._shutdown_hooks:
+                    await hook()
+                await self._module_registry.shutdown_all()
+                self._executor.shutdown(wait=False)
 
         # Create underlying FastAPI app
         self.fastapi = FastAPI(
@@ -214,11 +226,96 @@ class Vorte:
             
         # Register all modules (middleware and routes)
         self._module_registry.register_all(self)
-            
     async def __call__(self, scope, receive, send):
         """ASGI entry point — proxies to FastAPI."""
-        await self.fastapi(scope, receive, send)
+        if scope["type"] != "http":
+            await self.fastapi(scope, receive, send)
+            return
+
+        from vorte.core.tracing import set_trace_id, reset_trace_id
+        
+        request_id = _generate_request_id()
+        start_time = time.time()
+        self._request_start_times[request_id] = start_time
+        
+        # Add request_id to request state/scope
+        if "state" not in scope:
+            scope["state"] = {}
+        scope["state"]["request_id"] = request_id
+        
+        token = set_trace_id(request_id)
+        
+        # For deprecation headers
+        path = scope.get("path", "")
+        deprecation_headers = self._versioning.get_deprecation_headers(path)
+        
+        # Don't record metrics for internal framework/dashboard endpoints
+        is_internal = path.startswith("/_vorte") or path in ("/health", "/ready", "/live")
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                # Inject timing and tracing headers
+                headers = list(message.get("headers") or [])
+                headers.append((b"X-Request-ID", request_id.encode()))
+                headers.append((b"X-Powered-By", b"Vorte"))
+                if deprecation_headers:
+                    for key, value in deprecation_headers.items():
+                        headers.append((key.encode(), value.encode()))
+                latency_ms = int((time.time() - start_time) * 1000)
+                headers.append((b"X-Response-Time", f"{latency_ms}ms".encode()))
+                message["headers"] = headers
+                
+                # Keep status code for logging later
+                scope["_response_status"] = message.get("status", 200)
+                
+            elif message["type"] == "http.response.body":
+                more_body = message.get("more_body", False)
+                if not more_body:
+                    status = scope.get("_response_status", 200)
+                    latency_ms = (time.time() - start_time) * 1000
+                    if not is_internal:
+                        self.record_request(
+                            path,
+                            scope.get("method", "GET"),
+                            status,
+                            latency_ms
+                        )
+            
+            await send(message)
+
+        try:
+            await self.fastapi(scope, receive, send_wrapper)
+        finally:
+            self._request_start_times.pop(request_id, None)
+            reset_trace_id(token)
     
+    async def _detect_event_loop_lag(self):
+        """
+        Background task that measures event loop scheduling delay (GIL starvation).
+        Emits warning logs if lag exceeds 50ms (0.05 seconds).
+        """
+        import logging
+        logger = logging.getLogger("vorte.core")
+        interval = 0.5  # Check every 500ms
+        
+        while True:
+            try:
+                start = time.perf_counter()
+                await asyncio.sleep(interval)
+                elapsed = time.perf_counter() - start
+                lag = elapsed - interval
+                if lag > 0.05: # 50ms
+                    logger.warning(
+                        f"[Vorte DX] Event loop lag detected: {lag*1000:.1f}ms. "
+                        "This usually indicates GIL starvation caused by blocking synchronous Python code. "
+                        "Consider offloading heavy blocking operations to VorteExecutor or run_in_executor."
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[Vorte DX] Error in event loop lag detector: {e}")
+                await asyncio.sleep(interval)
+ 
     def _setup_middleware(self) -> None:
         """Setup core middleware."""
         # CORS
@@ -229,44 +326,6 @@ class Vorte:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        
-        # Request timing + standard response wrapping middleware
-        @self.fastapi.middleware("http")
-        async def vorte_middleware(request: Request, call_next):
-            from vorte.core.tracing import set_trace_id, reset_trace_id, generate_trace_id
-            
-            request_id = _generate_request_id()
-            start_time = time.time()
-            self._request_start_times[request_id] = start_time
-            
-            # Add request_id to request state and context var
-            request.state.request_id = request_id
-            token = set_trace_id(request_id)
-            
-            try:
-                # Check for deprecation headers
-                deprecation_headers = self._versioning.get_deprecation_headers(request.url.path)
-                
-                response = await call_next(request)
-                
-                # Add standard headers
-                response.headers["X-Request-ID"] = request_id
-                response.headers["X-Powered-By"] = "Vorte"
-                
-                # Add deprecation headers if applicable
-                if deprecation_headers:
-                    for key, value in deprecation_headers.items():
-                        response.headers[key] = value
-                
-                # Add timing header
-                latency_ms = int((time.time() - start_time) * 1000)
-                response.headers["X-Response-Time"] = f"{latency_ms}ms"
-                
-                return response
-            finally:
-                # Cleanup
-                self._request_start_times.pop(request_id, None)
-                reset_trace_id(token)
     
     # _setup_lifecycle is superseded by the lifespan context manager in __init__.
     

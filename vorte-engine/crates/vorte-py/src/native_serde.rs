@@ -214,8 +214,7 @@ impl NativeSerde {
         let mut pooled = self.engine.pool_acquire();
         match fmt {
             FORMAT_JSON => {
-                let writer = std::io::BufWriter::new(&mut *pooled);
-                let mut ser = serde_json::Serializer::new(writer);
+                let mut ser = serde_json::Serializer::new(&mut *pooled);
                 PyObjectSerializer(data)
                     .serialize(&mut ser)
                     .map_err(|e| {
@@ -262,9 +261,7 @@ impl NativeSerde {
             FORMAT_JSON => {
                 let mut pooled = self.engine.pool_acquire();
                 {
-                    // BufWriter over the pooled Vec<u8> — no heap allocation for the buffer.
-                    let writer = std::io::BufWriter::new(&mut *pooled);
-                    let mut ser = serde_json::Serializer::new(writer);
+                    let mut ser = serde_json::Serializer::new(&mut *pooled);
                     PyObjectSerializer(data)
                         .serialize(&mut ser)
                         .map_err(|e| {
