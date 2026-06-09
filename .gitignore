@@ -43,3 +43,7 @@ bun.lock
 # IDEs
 .vscode/
 .idea/
+
+# Rust build symbols
+*.pdb
+

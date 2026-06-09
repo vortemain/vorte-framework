@@ -239,3 +239,26 @@ def test_non_api_route_registration():
     # 1 route for Route + 1 for WebSocketRoute + 14 for Mount = 16
     assert engine.route_count >= 16
 
+
+@pytest.mark.asyncio
+async def test_custom_docs_favicon():
+    """Test custom docs and redoc pages serve the Vorte favicon URL."""
+    app = Vorte(auto_load=False)
+    app.configure(app_debug=True)
+    
+    async with VorteTestClient(app) as client:
+        # Check /docs UI HTML content
+        docs_resp = await client.get("/docs")
+        assert docs_resp.status_code == 200
+        assert b"/_vorte/assets/favicon/favicon.ico" in docs_resp._response.content
+        
+        # Check /redoc UI HTML content
+        redoc_resp = await client.get("/redoc")
+        assert redoc_resp.status_code == 200
+        assert b"/_vorte/assets/favicon/favicon.ico" in redoc_resp._response.content
+
+        # Check /favicon.ico response is reachable
+        favicon_resp = await client.get("/favicon.ico")
+        assert favicon_resp.status_code in (200, 404)  # 404 is okay if asset doesn't exist, but it should not error out
+
+

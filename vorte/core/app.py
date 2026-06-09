@@ -202,8 +202,8 @@ class Vorte:
             title=title or self._settings.app_name,
             description=description or "Built with Vorte Framework",
             version=version or "1.0.0",
-            docs_url="/docs" if self._settings.app_debug else None,
-            redoc_url="/redoc" if self._settings.app_debug else None,
+            docs_url=None,
+            redoc_url=None,
             lifespan=_lifespan,
             **kwargs,
         )
@@ -332,6 +332,43 @@ class Vorte:
     def _setup_builtin_routes(self) -> None:
         """Setup built-in routes."""
         
+        # Mount framework assets
+        assets_dir = Path(__file__).parent.parent / "assets"
+        if assets_dir.exists():
+            self.fastapi.mount(
+                "/_vorte/assets",
+                StaticFiles(directory=str(assets_dir)),
+                name="vorte_assets",
+            )
+
+        @self.fastapi.get("/favicon.ico", include_in_schema=False)
+        async def favicon():
+            from fastapi.responses import FileResponse
+            favicon_path = Path(__file__).parent.parent / "assets" / "favicon" / "favicon.ico"
+            if favicon_path.exists():
+                return FileResponse(str(favicon_path))
+            return Response(status_code=404)
+
+        if self._settings.app_debug:
+            from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+            
+            @self.fastapi.get("/docs", include_in_schema=False)
+            async def custom_swagger_ui_html():
+                return get_swagger_ui_html(
+                    openapi_url=self.fastapi.openapi_url,
+                    title=self.fastapi.title + " - Swagger UI",
+                    oauth2_redirect_url=self.fastapi.swagger_ui_oauth2_redirect_url,
+                    swagger_favicon_url="/_vorte/assets/favicon/favicon.ico",
+                )
+
+            @self.fastapi.get("/redoc", include_in_schema=False)
+            async def custom_redoc_html():
+                return get_redoc_html(
+                    openapi_url=self.fastapi.openapi_url,
+                    title=self.fastapi.title + " - ReDoc",
+                    redoc_favicon_url="/_vorte/assets/favicon/favicon.ico",
+                )
+
         @self.fastapi.get("/health", include_in_schema=False)
         async def health_check():
             """Full system health check."""
