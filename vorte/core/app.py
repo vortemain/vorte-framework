@@ -201,6 +201,26 @@ class Vorte:
             
             # Start event loop lag detection in background
             lag_task = asyncio.create_task(self._detect_event_loop_lag())
+
+            # Print dashboard access URL in development mode
+            if self._settings.dashboard.enabled and self._settings.app_env == "development":
+                token = ""
+                if hasattr(self, "_dashboard_runtime_token"):
+                    token = self._dashboard_runtime_token
+                elif self._settings.dashboard.token:
+                    token = self._settings.dashboard.token
+                elif self._settings.app_key:
+                    token = self._settings.app_key
+                
+                dashboard_url = f"{self._settings.app_url.rstrip('/')}/{self._settings.dashboard.path.lstrip('/')}/"
+                if token:
+                    dashboard_url += f"?token={token}"
+                
+                import sys
+                sys.stderr.write(
+                    f"\n  [Vorte DX] Admin Dashboard available at: {dashboard_url}\n\n"
+                )
+                sys.stderr.flush()
             
             try:
                 yield
@@ -258,7 +278,7 @@ class Vorte:
                 f"\n======================================================================\n"
                 f"[Vorte DX] Security Warning: Dashboard is secured. Access it using token:\n"
                 f"  Token: {self._dashboard_runtime_token}\n"
-                f"  URL: {self._settings.dashboard.path}?token={self._dashboard_runtime_token}\n"
+                f"  URL: {self._settings.app_url.rstrip('/')}/{self._settings.dashboard.path.lstrip('/')}/?token={self._dashboard_runtime_token}\n"
                 f"======================================================================\n\n"
             )
             sys.stderr.flush()

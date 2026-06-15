@@ -61,12 +61,12 @@ class StorageModule(Module):
         )
         app.container.register_instance(StorageManager, self._manager)
         self._register_routes(app)
-        logger.info("Storage module registered (driver=%s)", self._manager.driver_name)
+        logger.debug("Storage module registered (driver=%s)", self._manager.driver_name)
 
     async def on_startup(self) -> None:
         try:
             await self._manager.ping()
-            logger.info("Storage backend is reachable")
+            logger.debug("Storage backend is reachable")
         except Exception as exc:
             logger.warning("Storage backend not reachable: %s", exc)
 

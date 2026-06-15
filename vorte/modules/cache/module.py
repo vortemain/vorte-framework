@@ -97,8 +97,8 @@ class CacheModule(Module):
         self._manager = CacheManager(self._cache_config)
         app.container.register_instance(CacheManager, self._manager)
 
-        logger.info("CacheModule registered (driver=%s, default_ttl=%ds)",
-                     self._cache_config.driver, self._cache_config.default_ttl)
+        logger.debug("CacheModule registered (driver=%s, default_ttl=%ds)",
+                      self._cache_config.driver, self._cache_config.default_ttl)
 
     async def on_startup(self) -> None:
         """Initialize cache layers (connect to Redis, DB, etc.)."""

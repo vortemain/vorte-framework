@@ -55,10 +55,10 @@ class NotificationsModule(Module):
             slack_bot_token=self.get_config("slack_bot_token", ""),
         )
         app.container.register_instance(Notifier, self._notifier)
-        logger.info("Notifications module registered (channels=%s)", self.get_config("channels", ["email"]))
+        logger.debug("Notifications module registered (channels=%s)", self.get_config("channels", ["email"]))
 
     async def on_startup(self) -> None:
-        logger.info("Notifications module ready")
+        logger.debug("Notifications module ready")
 
     async def on_shutdown(self) -> None:
         pass

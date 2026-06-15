@@ -75,14 +75,14 @@ class SearchModule(Module):
 
         # Mount search API routes
         self._register_routes(app)
-        logger.info("Search module registered (engine=%s)", engine_type)
+        logger.debug("Search module registered (engine=%s)", engine_type)
 
     async def on_startup(self) -> None:
         """Verify connectivity to the search backend."""
         try:
             if self._backend:
                 await self._backend.ping()
-            logger.info("Search backend is reachable")
+            logger.debug("Search backend is reachable")
         except Exception as exc:
             logger.warning("Search backend not reachable: %s", exc)
 

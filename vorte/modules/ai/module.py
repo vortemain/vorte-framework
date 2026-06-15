@@ -140,7 +140,7 @@ class AIModule(Module):
             logger.warning("app.ai already set – overwriting with AI module client.")
         app.ai = self._client  # type: ignore[attr-defined]
 
-        logger.info(
+        logger.debug(
             "AI module registered: default=%s/%s, providers=%s",
             self._ai_config.default_provider,
             self._ai_config.default_model,

@@ -55,10 +55,10 @@ class MailerModule(Module):
             templates_dir=self.get_config("templates_dir", "templates/emails"),
         )
         app.container.register_instance(Mailer, self._mailer)
-        logger.info("Mailer module registered (driver=%s)", self.get_config("driver", "smtp"))
+        logger.debug("Mailer module registered (driver=%s)", self.get_config("driver", "smtp"))
 
     async def on_startup(self) -> None:
-        logger.info("Mailer module ready")
+        logger.debug("Mailer module ready")
 
     async def on_shutdown(self) -> None:
         pass

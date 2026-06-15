@@ -63,8 +63,15 @@ class DashboardModule(Module):
 
             # Catch-all route for SPA navigation
             @app.fastapi.get(dashboard_path + "/{full_path:path}", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
-            async def dashboard_spa(full_path: str):
+            async def dashboard_spa(full_path: str, request: Request):
                 """Serve the dashboard SPA."""
+                from fastapi.responses import RedirectResponse
+                if full_path == "index.html":
+                    query_params = request.url.query
+                    suffix = f"?{query_params}" if query_params else ""
+                    clean_path = dashboard_path.rstrip('/')
+                    return RedirectResponse(url=f"{clean_path}/{suffix}")
+
                 file_path = static_dir / full_path
                 if file_path.exists() and file_path.is_file():
                     return FileResponse(str(file_path))
@@ -78,11 +85,11 @@ class DashboardModule(Module):
 
             @app.fastapi.get(dashboard_path, include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
             async def dashboard_index(request: Request):
-                """Redirect to index.html to ensure relative assets load correctly."""
+                """Redirect bare route to trailing slash route so relative assets load correctly."""
                 query_params = request.url.query
                 suffix = f"?{query_params}" if query_params else ""
                 clean_path = dashboard_path.rstrip('/')
-                return RedirectResponse(url=f"{clean_path}/index.html{suffix}")
+                return RedirectResponse(url=f"{clean_path}/{suffix}")
         else:
             # No static files — redirect to API docs
             @app.fastapi.get(dashboard_path, include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])

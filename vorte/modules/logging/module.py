@@ -58,6 +58,68 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_entry, default=str)
 
 
+class VorteConsoleFormatter(logging.Formatter):
+    """Formats log records in a clean, human-readable console format for development."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created))
+        level = record.levelname
+        logger_name = record.name
+        message = record.getMessage()
+
+        # Simple ANSI color coding for terminal
+        colors = {
+            "DEBUG": "\033[36m",    # Cyan
+            "INFO": "\033[32m",     # Green
+            "WARNING": "\033[33m",  # Yellow
+            "ERROR": "\033[31m",    # Red
+            "CRITICAL": "\033[41;37m" # Red background, white text
+        }
+        reset = "\033[0m"
+        color = colors.get(level, "")
+
+        # Format level to be fixed width
+        level_str = f"{color}{level:<8}{reset}" if color else f"{level:<8}"
+
+        formatted = f"[{timestamp}] {level_str} [{logger_name}] {message}"
+
+        # Check if record has HTTP attributes like method, path, status_code, latency_ms
+        if hasattr(record, "method") and hasattr(record, "path"):
+            status_code = getattr(record, "status_code", "")
+            latency = getattr(record, "latency_ms", "")
+            
+            # Simple color for status code
+            status_color = ""
+            if isinstance(status_code, int):
+                if status_code < 300:
+                    status_color = "\033[32m" # Green
+                elif status_code < 400:
+                    status_color = "\033[34m" # Blue
+                elif status_code < 500:
+                    status_color = "\033[33m" # Yellow
+                else:
+                    status_color = "\033[31m" # Red
+
+            status_str = f"{status_color}{status_code}{reset}" if status_color else str(status_code)
+            latency_str = f"{latency}ms" if latency else ""
+            
+            parts = []
+            if status_str:
+                parts.append(f"Status: {status_str}")
+            if latency_str:
+                parts.append(f"Latency: {latency_str}")
+                
+            if parts:
+                formatted += f" | {' | '.join(parts)}"
+
+        # Handle exception if present
+        if record.exc_info and record.exc_info[1]:
+            exc_text = self.formatException(record.exc_info)
+            formatted += f"\n{exc_text}"
+            
+        return formatted
+
+
 class RingBufferHandler(logging.Handler):
     """Intercepts Python logging records into the Vorte ring buffer (dedup-safe)."""
 
@@ -99,8 +161,13 @@ class Logger:
         self._logger = logging.getLogger(name)
         self._logger.setLevel(getattr(logging, level.upper(), logging.INFO))
         self._logger.handlers.clear()
+        
+        from vorte.core.config import settings
         handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(JSONFormatter())
+        if settings.is_production():
+            handler.setFormatter(JSONFormatter())
+        else:
+            handler.setFormatter(VorteConsoleFormatter())
         self._logger.addHandler(handler)
         # Prevent propagation to root logger
         self._logger.propagate = False
@@ -214,6 +281,15 @@ class LoggingModule(Module):
         # Re-attach ring buffer handler to all key loggers (uvicorn sets propagate=False late)
         logger._attach_ring_handler()
 
+        # Update log formatters to VorteConsoleFormatter in development for all handlers
+        from vorte.core.config import settings
+        if not settings.is_production():
+            console_formatter = VorteConsoleFormatter()
+            for name in ("", "vorte", "uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+                lg = logging.getLogger(name)
+                for h in lg.handlers:
+                    if isinstance(h, logging.StreamHandler):
+                        h.setFormatter(console_formatter)
 
         # Request logging middleware
         @app.middleware("http")
@@ -233,6 +309,17 @@ class LoggingModule(Module):
 
         if hasattr(app, 'container'):
             app.container.register_instance(Logger, logger)
+
+    async def on_startup(self) -> None:
+        # Re-apply formatter during startup to catch any handlers uvicorn added
+        from vorte.core.config import settings
+        if not settings.is_production():
+            console_formatter = VorteConsoleFormatter()
+            for name in ("", "vorte", "uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+                lg = logging.getLogger(name)
+                for h in lg.handlers:
+                    if isinstance(h, logging.StreamHandler):
+                        h.setFormatter(console_formatter)
 
     @property
     def log(self) -> Logger:

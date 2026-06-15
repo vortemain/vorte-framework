@@ -66,12 +66,12 @@ class MpesaModule(Module):
         )
         app.container.register_instance(MpesaClient, self._client)
         self._register_callback_routes(app)
-        logger.info("M-Pesa module registered (env=%s)", self.get_config("environment", "sandbox"))
+        logger.debug("M-Pesa module registered (env=%s)", self.get_config("environment", "sandbox"))
 
     async def on_startup(self) -> None:
         try:
             token = await self._client.get_access_token()
-            logger.info("M-Pesa access token obtained: %s...", token[:12] if token else "None")
+            logger.debug("M-Pesa access token obtained: %s...", token[:12] if token else "None")
         except Exception as exc:
             logger.warning("M-Pesa startup: could not obtain access token: %s", exc)
 

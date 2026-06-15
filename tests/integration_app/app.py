@@ -318,8 +318,11 @@ def create_app(db_url: str = "sqlite+aiosqlite:///./taskflow_test.db") -> Vorte:
     """Build and configure the TaskFlow Vorte application."""
     app = Vorte(auto_load=False, title="TaskFlow API", version="1.0.0")
 
+    from vorte.modules.logging import LoggingModule
+
     # ── Register modules (register() accepts a list) ──
     app.register([
+        LoggingModule(level="INFO"),
         DatabaseModule(url=db_url, auto_create_tables=True),
         AuthModule(
             strategy="jwt",
