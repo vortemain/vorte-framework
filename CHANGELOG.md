@@ -5,6 +5,19 @@ All notable changes to the Vorte Framework are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-06-15
+
+### Fixed
+
+- **Dashboard Redirection** — refined base `/vorte/dashboard` redirection to clean trailing-slash `/vorte/dashboard/` route without exposing `/index.html` in browser address bar; also intercepted and redirected direct `/vorte/dashboard/index.html` requests
+- **Console Log Refinement** — hidden start-up registration logs for standard modules (Cache, Storage, AI, etc.) in development mode by setting them to `DEBUG` level
+- **Development Console Formatter** — replaced raw JSON lines in development mode with a human-readable, colorized `VorteConsoleFormatter` text output
+- **Startup URL Logger** — printed absolute Admin Dashboard URL (including security tokens) inside lifespan startup hooks for direct clicking
+
+### Added
+
+- Documentation for the new `Dashboard` and `Logging` modules on the `vorte-website` docs page
+
 ## [1.2.0] - 2026-06-15
 
 ### Added
@@ -136,6 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD with GitHub Actions (3-platform wheel build + PyPI publish)
 - MIT License
 
+[1.2.1]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.1
 [1.2.0]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.0
 [1.0.8]: https://github.com/Lijohtech-Developers/vorte-framework/releases/tag/v1.0.8
 [1.0.7]: https://github.com/Lijohtech-Developers/vorte-framework/releases/tag/v1.0.7

@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/Rust-Engine-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Engine">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License">
-  <img src="https://img.shields.io/badge/Version-1.2.0-blue?style=for-the-badge" alt="Version 1.2.0">
+  <img src="https://img.shields.io/badge/Version-1.2.1-blue?style=for-the-badge" alt="Version 1.2.1">
 </p>
 
 # Vorte Framework
