@@ -166,7 +166,7 @@ class AuthModule(Module):
             user = await self._create_user(
                 email=request.email,
                 password=request.password,
-                name=request.name,
+                name=request.username,
             )
             tokens = await self.jwt.create_tokens(
                 sub=user["id"],

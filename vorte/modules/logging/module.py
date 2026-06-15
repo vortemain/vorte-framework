@@ -351,6 +351,7 @@ class LoggingModule(Module):
                         status_code=500,
                         latency_ms=latency_ms,
                         request_id=getattr(request.state, "request_id", ""),
+                        exc_info=True
                     )
                 raise
 
