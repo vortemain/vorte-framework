@@ -215,6 +215,7 @@ class DashboardConfig:
     enabled: bool = field(default_factory=lambda: env_bool("DASHBOARD_ENABLED", True))
     path: str = "/vorte/dashboard"
     auth_required: bool = field(default_factory=lambda: env_bool("DASHBOARD_AUTH", True))
+    token: str = field(default_factory=lambda: env("DASHBOARD_TOKEN", ""))
 
 
 @dataclass

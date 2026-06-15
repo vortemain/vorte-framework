@@ -92,11 +92,18 @@ class AuthModule(Module):
         self.sessions = SessionManager()
         self.mfa_service = MFAService() if self._mfa_enabled else None  # type: ignore
 
-        # Store on app state for guards to access
+        # Store on app state for guards to access.
+        # Must be set on both the Vorte wrapper AND the underlying FastAPI instance
+        # because in ASGI request handling request.app resolves to FastAPI.
         app._vorte_jwt = self.jwt
         app._vorte_api_keys = self.api_keys
         app._vorte_sessions = self.sessions
         app._vorte_webhook_secrets = getattr(app, '_vorte_webhook_secrets', {})
+        if hasattr(app, 'fastapi'):
+            app.fastapi._vorte_jwt = self.jwt
+            app.fastapi._vorte_api_keys = self.api_keys
+            app.fastapi._vorte_sessions = self.sessions
+            app.fastapi._vorte_webhook_secrets = app._vorte_webhook_secrets
 
         # Register OAuth providers
         self._setup_oauth(app)

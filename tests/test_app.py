@@ -34,7 +34,7 @@ class CustomTestModule(Module):
 @pytest.mark.asyncio
 async def test_app_init_without_autoload():
     """Test app initialization when auto_load=False."""
-    app = Vorte(auto_load=False, title="NoAutoLoadApp", version="2.0.0")
+    app = Vorte(auto_load=False, title="NoAutoLoadApp", version="2.0.0", dashboard=False)
     assert app.fastapi.title == "NoAutoLoadApp"
     assert app.fastapi.version == "2.0.0"
     assert len(app.modules.get_all()) == 0
@@ -99,7 +99,7 @@ async def test_app_lifecycle_and_custom_module():
 @pytest.mark.asyncio
 async def test_built_in_endpoints():
     """Test ready, live, and info endpoints."""
-    app = Vorte(auto_load=False)
+    app = Vorte(auto_load=False, dashboard=False)
     
     async with VorteTestClient(app) as client:
         # Readiness Probe
@@ -164,6 +164,7 @@ async def test_health_check_endpoint():
 async def test_metrics_and_dashboard_api():
     """Test request recording metrics and dashboard endpoint metrics."""
     app = Vorte(auto_load=False)
+    app.settings.dashboard.auth_required = False
     
     # Record a successful request
     app.record_request("/api/users", "GET", 200, 45.2)
@@ -260,5 +261,126 @@ async def test_custom_docs_favicon():
         # Check /favicon.ico response is reachable
         favicon_resp = await client.get("/favicon.ico")
         assert favicon_resp.status_code in (200, 404)  # 404 is okay if asset doesn't exist, but it should not error out
+
+
+@pytest.mark.asyncio
+async def test_dashboard_security():
+    """Test dashboard route security: auth required vs bypass, tokens, and role-based access."""
+    # 1. Test Auth Bypass
+    app_bypass = Vorte(auto_load=False)
+    app_bypass.settings.dashboard.auth_required = False
+    async with VorteTestClient(app_bypass) as client:
+        resp = await client.get("/_vorte/dashboard/overview")
+        assert resp.status_code == 200
+
+    # 2. Test Auth Required - Unauthorized (No Token)
+    app_auth = Vorte(auto_load=False)
+    app_auth.settings.dashboard.auth_required = True
+    app_auth.settings.dashboard.token = "secure-dash-token"
+    async with VorteTestClient(app_auth) as client:
+        resp = await client.get("/_vorte/dashboard/overview")
+        assert resp.status_code == 401
+        assert "Dashboard access denied" in resp.json_data["detail"]["message"]
+
+    # 3. Test Auth Required - Authorized via Header
+    async with VorteTestClient(app_auth) as client:
+        resp = await client.get("/_vorte/dashboard/overview", headers={"X-Dashboard-Token": "secure-dash-token"})
+        assert resp.status_code == 200
+
+    # 4. Test Auth Required - Authorized via Query Param
+    async with VorteTestClient(app_auth) as client:
+        resp = await client.get("/_vorte/dashboard/overview", params={"token": "secure-dash-token"})
+        assert resp.status_code == 200
+
+    # 5. Test Auth Required - Authorized via Bearer Token
+    async with VorteTestClient(app_auth) as client:
+        resp = await client.get("/_vorte/dashboard/overview", headers={"Authorization": "Bearer secure-dash-token"})
+        assert resp.status_code == 200
+
+    # 6. Test Auth Required - Authorized via APP_KEY fallback
+    app_key_auth = Vorte(auto_load=False)
+    app_key_auth.settings.dashboard.auth_required = True
+    app_key_auth.settings.dashboard.token = ""
+    app_key_auth.settings.app_key = "vorte-app-key"
+    async with VorteTestClient(app_key_auth) as client:
+        # Invalid token
+        resp = await client.get("/_vorte/dashboard/overview", headers={"X-Dashboard-Token": "wrong-token"})
+        assert resp.status_code == 401
+        # Valid app key
+        resp = await client.get("/_vorte/dashboard/overview", headers={"X-Dashboard-Token": "vorte-app-key"})
+        assert resp.status_code == 200
+
+    # 7. Test Auth Required - Dynamic token generated in development environment by default
+    app_default = Vorte(auto_load=False)
+    assert hasattr(app_default, "_dashboard_runtime_token")
+    assert len(app_default._dashboard_runtime_token) == 32
+
+    # 8. Test Auth Required - Admin user authorization fallback
+    from unittest.mock import patch
+    from vorte.modules.auth.guards import CurrentUser
+
+    app_admin = Vorte(auto_load=False)
+    app_admin.settings.dashboard.auth_required = True
+    app_admin.settings.dashboard.token = "secure-dash-token" # Non-matching token to force user auth fallback
+    
+    # 8a. Admin user should be allowed
+    admin_user = CurrentUser(id="1", email="admin@vorte.dev", name="Admin User", role="admin")
+    with patch("vorte.modules.auth.guards.resolve_user", return_value=admin_user):
+        async with VorteTestClient(app_admin) as client:
+            resp = await client.get("/_vorte/dashboard/overview")
+            assert resp.status_code == 200
+
+    # 8b. Regular user should be denied
+    regular_user = CurrentUser(id="2", email="user@vorte.dev", name="Regular User", role="user")
+    with patch("vorte.modules.auth.guards.resolve_user", return_value=regular_user):
+        async with VorteTestClient(app_admin) as client:
+            resp = await client.get("/_vorte/dashboard/overview")
+            assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_dashboard_assets_serving():
+    """Test that dashboard SPA files (index.html, CSS, JS) are correctly served."""
+    app = Vorte(auto_load=False)
+    app.settings.dashboard.auth_required = False
+    
+    async with VorteTestClient(app) as client:
+        # 1. Main index route
+        resp = await client.get("/vorte/dashboard")
+        assert resp.status_code == 200
+        assert b"Vorte Admin Dashboard" in resp._response.content
+
+        # 2. CSS asset route
+        resp = await client.get("/vorte/dashboard/dashboard.css")
+        assert resp.status_code == 200
+        assert b"Vorte Admin Dashboard Stylesheet" in resp._response.content
+
+        # 3. JS asset route
+        resp = await client.get("/vorte/dashboard/dashboard.js")
+        assert resp.status_code == 200
+        assert b"Vorte Admin Dashboard Controller" in resp._response.content
+
+        # 4. Fallback/spa routing check
+        resp = await client.get("/vorte/dashboard/some-nonexistent-subpage")
+        assert resp.status_code == 200
+        assert b"Vorte Admin Dashboard" in resp._response.content
+
+        # 5. Test that static assets bypass auth checks even when auth_required = True
+        app_secure = Vorte(auto_load=False)
+        app_secure.settings.dashboard.auth_required = True
+        app_secure.settings.dashboard.token = "secure-dash-token"
+        async with VorteTestClient(app_secure) as secure_client:
+            # Main page should be unauthorized
+            resp = await secure_client.get("/vorte/dashboard")
+            assert resp.status_code == 401
+            # CSS asset should bypass and succeed
+            resp = await secure_client.get("/vorte/dashboard/dashboard.css")
+            assert resp.status_code == 200
+            # JS asset should bypass and succeed
+            resp = await secure_client.get("/vorte/dashboard/dashboard.js")
+            assert resp.status_code == 200
+
+
+
 
 

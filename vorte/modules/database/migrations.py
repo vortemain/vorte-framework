@@ -179,6 +179,17 @@ class MigrationManager:
 
             pending = [r for r in ordered if r["id"] not in applied]
 
+            if target != "head":
+                target_idx = -1
+                for idx, r in enumerate(pending):
+                    if r["id"] == target:
+                        target_idx = idx
+                        break
+                if target_idx != -1:
+                    pending = pending[:target_idx + 1]
+                elif target in applied:
+                    pending = []
+
             if step is not None:
                 pending = pending[:step]
 
@@ -189,7 +200,7 @@ class MigrationManager:
 
                 if hasattr(mod, "upgrade"):
                     # Inject connection/session
-                    await self._run_migration(session, mod.upgrade, rev["id"])
+                    await self._run_migration(session, mod.upgrade, rev["id"], is_upgrade=True)
                     applied_ids.append(rev["id"])
 
             await session.commit()
@@ -221,16 +232,28 @@ class MigrationManager:
             ordered = self._topological_sort(all_revisions)
             applied_ordered = [r for r in ordered if r["id"] in applied]
 
-            reverted_ids: List[str] = []
-            for rev in reversed(applied_ordered[:step]):
-                if target and rev["id"] == target:
-                    break
+            if target is not None:
+                target_idx = -1
+                for idx, r in enumerate(applied_ordered):
+                    if r["id"] == target:
+                        target_idx = idx
+                        break
+                if target_idx != -1:
+                    to_revert = applied_ordered[target_idx + 1:]
+                elif target == "base":
+                    to_revert = applied_ordered
+                else:
+                    to_revert = []
+            else:
+                to_revert = applied_ordered[-step:] if step > 0 else []
 
+            reverted_ids: List[str] = []
+            for rev in reversed(to_revert):
                 module_path = rev["filepath"]
                 mod = self._load_migration_module(module_path)
 
                 if hasattr(mod, "downgrade"):
-                    await self._run_migration(session, mod.downgrade, rev["id"])
+                    await self._run_migration(session, mod.downgrade, rev["id"], is_upgrade=False)
                     reverted_ids.append(rev["id"])
 
             await session.commit()
@@ -336,26 +359,41 @@ class MigrationManager:
             {"rev_id": rev_id},
         )
 
-    async def _run_migration(self, session: Any, func: Any, rev_id: str) -> None:
-        """Run a migration function and track it."""
+    async def _run_migration(self, session: Any, func: Any, rev_id: str, is_upgrade: bool = True) -> None:
+        """Run a migration function and track or untrack it."""
         # Check signature: accept connection/conn or use session directly
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
 
-        if params and params[0] in ("connection", "conn", "op"):
-            # Pass the connection/engine for op-based migrations
-            if asyncio.iscoroutinefunction(func):
+        if asyncio.iscoroutinefunction(func):
+            # For async functions, run them directly on the engine or session connection.
+            # (Note: Alembic's 'op' is sync and will not be bound)
+            if params and params[0] in ("connection", "conn", "op"):
                 await func(self._connection.engine)
             else:
-                func(self._connection.engine)
-        else:
-            if asyncio.iscoroutinefunction(func):
                 await func()
-            else:
-                func()
+        else:
+            # For standard sync migrations, run inside run_sync with Operations context bound
+            conn = await session.connection()
 
-        # Track
-        await self._track_revision(session, rev_id)
+            def run_sync_migration(sync_conn):
+                from alembic.migration import MigrationContext
+                from alembic.operations import Operations
+
+                ctx = MigrationContext.configure(sync_conn)
+                with Operations.context(ctx):
+                    if params and params[0] in ("connection", "conn", "op"):
+                        func(sync_conn)
+                    else:
+                        func()
+
+            await conn.run_sync(run_sync_migration)
+
+        # Track or untrack
+        if is_upgrade:
+            await self._track_revision(session, rev_id)
+        else:
+            await self._untrack_revision(session, rev_id)
 
     # ------------------------------------------------------------------
     # Internal: revision discovery

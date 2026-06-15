@@ -47,3 +47,7 @@ bun.lock
 # Rust build symbols
 *.pdb
 
+# Local / temporary files
+check_logs.py
+*.db
+

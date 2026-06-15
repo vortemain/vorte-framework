@@ -49,6 +49,9 @@ class DashboardModule(Module):
 
     def register(self, app: "Vorte") -> None:
         """Register the dashboard with the application."""
+        from fastapi import Depends
+        from vorte.core.app import verify_dashboard_access
+        
         dashboard_path = app.settings.dashboard.path
         static_dir = Path(__file__).parent / "static"
 
@@ -57,15 +60,8 @@ class DashboardModule(Module):
             from fastapi.staticfiles import StaticFiles
             from fastapi.responses import FileResponse
 
-            # Serve the SPA static files
-            app.fastapi.mount(
-                f"{dashboard_path}/_next",
-                StaticFiles(directory=str(static_dir / "_next")),
-                name="dashboard_next",
-            )
-
             # Catch-all route for SPA navigation
-            @app.fastapi.get(dashboard_path + "/{full_path:path}", include_in_schema=False)
+            @app.fastapi.get(dashboard_path + "/{full_path:path}", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
             async def dashboard_spa(full_path: str):
                 """Serve the dashboard SPA."""
                 file_path = static_dir / full_path
@@ -77,7 +73,7 @@ class DashboardModule(Module):
                     return FileResponse(str(index_path))
                 return {"error": "Dashboard not built. Run: vorte dashboard:build"}
 
-            @app.fastapi.get(dashboard_path, include_in_schema=False)
+            @app.fastapi.get(dashboard_path, include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
             async def dashboard_index():
                 """Dashboard home page."""
                 index_path = static_dir / "index.html"
@@ -86,7 +82,7 @@ class DashboardModule(Module):
                 return {"error": "Dashboard not built. Run: vorte dashboard:build"}
         else:
             # No static files — redirect to API docs
-            @app.fastapi.get(dashboard_path, include_in_schema=False)
+            @app.fastapi.get(dashboard_path, include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
             async def dashboard_placeholder():
                 return {
                     "message": "Vorte Dashboard",
@@ -103,11 +99,14 @@ class DashboardModule(Module):
                     ],
                 }
 
-        @app.fastapi.get("/_vorte/dashboard/logs", include_in_schema=False)
+        @app.fastapi.get("/_vorte/dashboard/logs", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_logs():
             """Fetch recent logs from the logging module."""
             from vorte.modules.logging import logger
+            # Ensure ring buffer handler is attached (in case LoggingModule wasn't registered)
+            logger._attach_ring_handler()
             return {"logs": logger.get_logs()}
+
 
     async def health_check(self) -> Dict[str, Any]:
         return {

@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/Rust-Engine-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Engine">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License">
-  <img src="https://img.shields.io/badge/Version-1.1.3-blue?style=for-the-badge" alt="Version 1.1.3">
+  <img src="https://img.shields.io/badge/Version-1.2.0-blue?style=for-the-badge" alt="Version 1.2.0">
 </p>
 
 # Vorte Framework
@@ -38,23 +38,23 @@ Vorte is a high-performance Python framework built on top of FastAPI, designed f
   - [Executor & Concurrency](#executor--concurrency)
 - [Built-in Modules (21)](#built-in-modules-21)
   - [AI Module](#ai-module)
-  - [Agents Module](#agents-module)
+  - [Agents Module (Beta)](#agents-module-beta)
   - [Auth Module](#auth-module)
   - [Database Module](#database-module)
   - [Cache Module](#cache-module)
   - [Queue Module](#queue-module)
   - [Storage Module](#storage-module)
-  - [Search Module](#search-module)
-  - [Mailer Module](#mailer-module)
-  - [M-Pesa Module](#mpesa-module)
-  - [Payments Module](#payments-module)
-  - [Notifications Module](#notifications-module)
+  - [Search Module (Beta)](#search-module-beta)
+  - [Mailer Module (Beta)](#mailer-module-beta)
+  - [M-Pesa Module (Beta)](#mpesa-module-beta)
+  - [Payments Module (Beta)](#payments-module-beta)
+  - [Notifications Module (Beta)](#notifications-module-beta)
   - [Security Module](#security-module)
-  - [Webhooks Module](#webhooks-module)
-  - [Sockets Module](#sockets-module)
-  - [GraphQL Module](#graphql-module)
-  - [Multi-Tenancy Module](#multi-tenancy-module)
-  - [Feature Flags Module](#feature-flags-module)
+  - [Webhooks Module (Beta)](#webhooks-module-beta)
+  - [Sockets Module (Beta)](#sockets-module-beta)
+  - [GraphQL Module (Beta)](#graphql-module-beta)
+  - [Multi-Tenancy Module (Beta)](#multi-tenancy-module-beta)
+  - [Feature Flags Module (Beta)](#feature-flags-module-beta)
   - [Internationalization Module](#i18n-module)
   - [Logging Module](#logging-module)
   - [Dashboard Module](#dashboard-module)
@@ -72,7 +72,7 @@ Vorte is a high-performance Python framework built on top of FastAPI, designed f
 ## Key Features
 
 - **AI-First Architecture** -- Native multi-provider AI integration (OpenAI, Anthropic, Gemini, Mistral) with cost tracking, streaming, embeddings, and intelligent routing.
-- **21 Built-in Modules** -- Auth, Database, Cache, Queue, AI, Agents, Storage, Search, Mailer, M-Pesa, Payments, Notifications, Webhooks, Sockets, GraphQL, Multi-Tenancy, Feature Flags, i18n, Security, Logging, and Dashboard.
+- **21 Built-in Modules** -- 10 Core Stable Modules (Auth, Database, Cache, Queue, AI, Storage, i18n, Security, Logging, Dashboard) and 11 Additional Modules in Beta (Agents, Search, Mailer, M-Pesa, Payments, Notifications, Webhooks, Sockets, GraphQL, Multi-Tenancy, Feature Flags).
 - **Rust Native Engine** -- Optional zero-copy radix tree router, work-stealing executor, priority task scheduler, multi-format serialization (JSON, MsgPack, CBOR, Protobuf), and DAG execution graphs.
 - **Built-in Admin Dashboard** -- Real-time Next.js dashboard served at `/_vorte/dashboard` with metrics, module health, route inspection, and system monitoring.
 - **Standard Response Envelope** -- Every response wrapped in a consistent `{success, data, meta, ai, error, pagination}` structure with request tracing.
@@ -673,7 +673,7 @@ app.register(AIModule())
 - `LATENCY_OPTIMIZED` -- Route to fastest provider
 - `QUALITY_FIRST` -- Route to highest-quality provider
 
-### Agents Module
+### Agents Module (Beta)
 
 Build AI agents with tools, memory, RAG, pipelines, and guardrails.
 
@@ -840,7 +840,7 @@ app.register(StorageModule())
 - `region` -- AWS region
 - `cdn_url` -- CDN URL
 
-### Search Module
+### Search Module (Beta)
 
 Full-text search with MeiliSearch and pgvector support.
 
@@ -856,7 +856,7 @@ app.register(SearchModule())
 # - Search API
 ```
 
-### Mailer Module
+### Mailer Module (Beta)
 
 Email sending with SMTP backend.
 
@@ -872,7 +872,7 @@ app.register(MailerModule())
 # - Queue-based sending
 ```
 
-### M-Pesa Module
+### M-Pesa Module (Beta)
 
 First-class Safaricom M-Pesa (Daraja API) integration.
 
@@ -898,7 +898,7 @@ app.register(MpesaModule())
 - `passkey` -- Lipa Na M-Pesa passkey
 - `callback_url` -- Webhook URL
 
-### Payments Module
+### Payments Module (Beta)
 
 Multi-provider payment processing with Stripe and Paystack.
 
@@ -914,7 +914,7 @@ app.register(PaymentsModule())
 # - Subscription management
 ```
 
-### Notifications Module
+### Notifications Module (Beta)
 
 Multi-channel notification delivery.
 
@@ -949,7 +949,7 @@ app.register(SecurityModule())
 # - Geo-blocking
 ```
 
-### Webhooks Module
+### Webhooks Module (Beta)
 
 Webhook management with delivery, retry, and verification.
 
@@ -965,7 +965,7 @@ app.register(WebhooksModule())
 # - Delivery logs
 ```
 
-### Sockets Module
+### Sockets Module (Beta)
 
 WebSocket management with rooms, broadcasting, and authentication.
 
@@ -981,7 +981,7 @@ app.register(SocketModule())
 # - Connection lifecycle hooks
 ```
 
-### GraphQL Module
+### GraphQL Module (Beta)
 
 GraphQL API with auto-schema generation and subscriptions.
 
@@ -997,7 +997,7 @@ app.register(GraphQLModule())
 # - Query/Mutation resolvers
 ```
 
-### Multi-Tenancy Module
+### Multi-Tenancy Module (Beta)
 
 Multi-tenant application support with multiple isolation strategies.
 
@@ -1014,7 +1014,7 @@ app.register(MultiTenancyModule())
 # - Schema-level isolation
 ```
 
-### Feature Flags Module
+### Feature Flags Module (Beta)
 
 Feature flags with percentage rollouts, targeting rules, and A/B testing.
 

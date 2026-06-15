@@ -40,7 +40,7 @@ from vorte.modules.ai import AIModule
 from vorte.modules.cache import CacheModule
 from vorte.modules.queue import QueueModule
 
-app = Vorte(auto_load=True)
+app = Vorte(auto_load=False)
 app.register([
     DatabaseModule(),
     AuthModule(strategy="jwt"),
@@ -400,6 +400,85 @@ class {name.title().replace("_", "")}Service:
     print(f"  Don't forget to register it in main.py:")
     print(f'    from app.modules.{name}.router import router as {name}_router')
     print(f'    app.include_router({name}_router)')
+
+
+def cmd_make_crud(name: str):
+    """Generate a new CRUD module with ActiveRecord and class-based routing."""
+    target = Path(f"app/modules/{name}")
+    target.mkdir(parents=True, exist_ok=True)
+
+    name_title = name.title().replace("_", "")
+    name_single = name[:-1] if name.endswith('s') else name
+    model_name = name_single.title().replace("_", "")
+    schema_name = f"{model_name}Response"
+    create_schema_name = f"{model_name}Create"
+    controller_name = f"{model_name}Controller"
+
+    (target / "__init__.py").write_text("")
+
+    (target / "models.py").write_text(f'''from vorte.modules.database.model import VorteModel, StringField
+
+class {model_name}(VorteModel):
+    __tablename__ = "{name}"
+
+    name = StringField(nullable=False)
+''')
+
+    (target / "schemas.py").write_text(f'''from pydantic import BaseModel
+
+class {create_schema_name}(BaseModel):
+    name: str
+
+class {schema_name}(BaseModel):
+    id: str
+    name: str
+
+    model_config = {{"from_attributes": True}}
+''')
+
+    (target / "controller.py").write_text(f'''from vorte import Controller, route, success_response
+from app.modules.{name}.models import {model_name}
+from app.modules.{name}.schemas import {schema_name}, {create_schema_name}
+
+class {controller_name}(Controller):
+    _vorte_prefix = "/{name}"
+    _vorte_tags = ["{name_title}"]
+
+    @route.get("")
+    async def list(self):
+        records = await {model_name}.find_all()
+        return success_response(data=[r.to_dict() for r in records])
+
+    @route.get("/{{id}}")
+    async def get(self, id: str):
+        record = await {model_name}.find_or_fail(id)
+        return success_response(data=record.to_dict())
+
+    @route.post("")
+    async def create(self, payload: {create_schema_name}):
+        record = await {model_name}.create(payload.model_dump())
+        return success_response(data=record.to_dict())
+
+    @route.put("/{{id}}")
+    async def update(self, id: str, payload: {create_schema_name}):
+        record = await {model_name}.find_or_fail(id)
+        for key, val in payload.model_dump(exclude_unset=True).items():
+            setattr(record, key, val)
+        await record.save()
+        return success_response(data=record.to_dict())
+
+    @route.delete("/{{id}}")
+    async def delete(self, id: str):
+        record = await {model_name}.find_or_fail(id)
+        await record.delete()
+        return success_response(data={{"message": f"Deleted {name_single} successfully"}})
+''')
+
+    print(f"  Created CRUD module: {name}")
+    print(f"  Files: models.py, schemas.py, controller.py")
+    print(f"  Register it in main.py:")
+    print(f"    from app.modules.{name}.controller import {controller_name}")
+    print(f"    router.register_controller({controller_name})")
 
 
 def cmd_make_job(name: str):
@@ -895,7 +974,7 @@ def cli():
             import vorte
             version = vorte.__version__
         except Exception:
-            version = "1.1.3"
+            version = "1.2.0"
         print(f"Vorte Framework v{version}")
         return
 
@@ -913,6 +992,7 @@ def cli():
         "modules": cmd_modules,
         "health": cmd_health,
         "make:module": lambda: cmd_make_module(sub_args[0], "--with-auth" in sub_args),
+        "make:crud": lambda: cmd_make_crud(sub_args[0]),
         "make:job": lambda: cmd_make_job(sub_args[0]),
         "make:agent": lambda: cmd_make_agent(sub_args[0]),
         "make:pipeline": lambda: cmd_make_pipeline(sub_args[0]),
@@ -981,7 +1061,7 @@ def _print_help():
         import vorte
         version = vorte.__version__
     except Exception:
-        version = "1.1.3"
+        version = "1.2.0"
     print(f"""
   Vorte Framework CLI v{version}
   ==========================
@@ -998,6 +1078,7 @@ def _print_help():
 
   GENERATOR COMMANDS:
     vorte make:module <name> [--with-auth]           Generate a new module
+    vorte make:crud <name>                           Generate a new CRUD module
     vorte make:job <name>                            Generate a background job
     vorte make:agent <name>                          Generate an AI agent
     vorte make:pipeline <name>                       Generate an AI pipeline

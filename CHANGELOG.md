@@ -5,6 +5,40 @@ All notable changes to the Vorte Framework are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-15
+
+### Added
+
+- **Admin Dashboard** — complete Vanilla JS SPA dashboard with 6 panels (Overview, Modules, Routes, Health, Logs, Config)
+  - Token-secured access: token generated per server start, printed to console, stored in `sessionStorage`
+  - **Overview panel**: live module/route/request/error stats, CPU & memory ring gauges, recent request table, app info card
+  - **Modules panel**: searchable cards with name, version, state indicator, description, and priority
+  - **Routes panel**: full route table with method filter buttons (ALL/GET/POST/PUT/PATCH/DELETE) and text search
+  - **Health panel**: per-module health cards with manual refresh button
+  - **Logs panel**: live-streaming terminal that captures all Python log output (uvicorn, FastAPI, application code) via `RingBufferHandler`; supports level filter + text search + clear
+  - **Config panel**: formatted JSON config viewer with Copy JSON button
+  - Live uptime counter — ticks every second client-side (no polling required for accuracy)
+  - Dark-mode design with glassmorphism cards, ring gauge animations, and micro-interactions
+  - Serves `logo-dark.png` from `/_vorte/assets/logos/`
+- **`RingBufferHandler`** in `vorte.modules.logging` — captures all Python log records into an in-memory `deque(maxlen=1000)` for dashboard streaming
+  - Attaches to root logger and directly to `uvicorn`, `uvicorn.access`, `uvicorn.error` (which set `propagate=False`)
+  - Built-in deduplication via `LogRecord` object identity — zero duplicate entries even across overlapping logger hierarchies
+  - Lazy re-attachment on first dashboard `/logs` request — works even without `LoggingModule` registered
+
+### Fixed
+
+- **ReDoc blank page** — replaced FastAPI's `get_redoc_html()` (uses dead `redoc@next` jsDelivr tag → 404) with a hand-rolled `HTMLResponse` pinned to `redoc@2.1.5`
+- **Routes API metadata** — `get_routes()` now always returns valid `module` and `handler` strings (previously returned `undefined`)
+- **`LoggingModule.register()`** — no longer replaces the module-level `logger` instance (which would orphan the ring buffer and lose all log history captured before registration)
+- **`logger` export** — `vorte.modules.logging` now correctly exports `logger` in `__all__`
+
+### Improved
+
+- Dashboard uptime counter now ticks every second on the client (seeded from server value + `Date.now()` anchor) — no more 3.5-second jumps
+- `formatUptime()` now shows full precision: `"1h 2m 15s"` instead of truncating seconds for multi-hour uptimes
+- Topbar layout stabilized (`flex-shrink: 0`) — no longer stretches when switching tabs
+- CPU/memory gauge cards use `min-height` — text labels no longer clip
+
 ## [1.0.8] - 2026-05-20
 
 ### Added
@@ -102,6 +136,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD with GitHub Actions (3-platform wheel build + PyPI publish)
 - MIT License
 
+[1.2.0]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.0
 [1.0.8]: https://github.com/Lijohtech-Developers/vorte-framework/releases/tag/v1.0.8
 [1.0.7]: https://github.com/Lijohtech-Developers/vorte-framework/releases/tag/v1.0.7
 [1.0.6]: https://github.com/Lijohtech-Developers/vorte-framework/releases/tag/v1.0.6

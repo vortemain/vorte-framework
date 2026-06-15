@@ -21,7 +21,7 @@ Quick Start:
     uvicorn.run(app, host="0.0.0.0", port=8000)
 """
 
-__version__ = "1.1.3"
+__version__ = "1.2.0"
 __author__ = "Vorte Framework"
 __license__ = "MIT"
 
@@ -30,6 +30,8 @@ from vorte.core.module import Module, ModuleRegistry, ModuleMeta, ModuleState, M
 from vorte.core.config import Settings, settings
 from vorte.core.response import VorteResponse, success_response, error_response, VorteSSEResponse, VorteStreamResponse
 from vorte.core.router import router
+from vorte.core.controller import Controller, route
+from vorte.modules.cache.decorators import cache
 from vorte.core.di import Container, Depends, inject, wire
 from vorte.core.serializer import FastSerializer, lazy_schema
 from vorte.core.executor import VorteExecutor, safe_route
@@ -78,11 +80,15 @@ __all__ = [
     "VorteSSEResponse",
     "VorteStreamResponse",
     "router",
+    "cache",
     "Container",
     "Depends",
     "inject",
     "wire",
     "VorteEngine",
+    # Controllers
+    "Controller",
+    "route",
     # Serialization
     "FastSerializer",
     "lazy_schema",

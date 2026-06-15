@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vorte Admin Dashboard</title>
+    <!-- Google Fonts: Inter & Fira Code -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Dashboard Styling -->
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <img src="/_vorte/assets/logos/logo-dark.png" alt="Vorte Logo" class="brand-logo-img">
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-tab="overview">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>Overview</span>
+                </button>
+                <button class="nav-item" data-tab="modules">
+                    <i class="fa-solid fa-cubes"></i>
+                    <span>Modules</span>
+                </button>
+                <button class="nav-item" data-tab="routes">
+                    <i class="fa-solid fa-route"></i>
+                    <span>Routes</span>
+                </button>
+                <button class="nav-item" data-tab="health">
+                    <i class="fa-solid fa-heart-pulse"></i>
+                    <span>Health</span>
+                </button>
+                <button class="nav-item" data-tab="logs">
+                    <i class="fa-solid fa-terminal"></i>
+                    <span>Logs</span>
+                </button>
+                <button class="nav-item" data-tab="config">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Config</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="dx-links">
+                    <a href="/docs" target="_blank" class="dx-link" title="Open Swagger API Docs">
+                        <i class="fa-solid fa-book-open"></i> Swagger UI
+                    </a>
+                    <a href="/redoc" target="_blank" class="dx-link" title="Open ReDoc API Docs">
+                        <i class="fa-solid fa-file-contract"></i> ReDoc
+                    </a>
+                </div>
+                <span class="version-badge" id="framework-version">v1.0.0 Stable</span>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Bar Header -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <h1 class="page-title" id="page-title">Dashboard Overview</h1>
+                    <div class="app-status">
+                        <span class="status-dot healthy"></span>
+                        <span class="status-text">Server Online</span>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <div class="header-metric" id="uptime-container">
+                        <i class="fa-solid fa-clock"></i>
+                        <span class="metric-label">Uptime:</span>
+                        <span class="metric-value" id="app-uptime">0s</span>
+                    </div>
+                    <div class="env-badge" id="app-env">development</div>
+                    <div class="token-status" id="token-status" title="Auth Token Active" style="display: none;">
+                        <i class="fa-solid fa-key"></i>
+                        <span id="token-display">Secured</span>
+                        <button class="btn-copy-token" id="btn-copy-token" title="Copy active token">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Content Panels -->
+            <div class="content-body">
+                <!-- 1. OVERVIEW PANEL -->
+                <section class="tab-panel active" id="panel-overview">
+                    <!-- Stat Grid -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon purple"><i class="fa-solid fa-cubes"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Active Modules</span>
+                                <span class="stat-value" id="stat-modules">0 / 0</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon blue"><i class="fa-solid fa-route"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Total Routes</span>
+                                <span class="stat-value" id="stat-routes">0</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon green"><i class="fa-solid fa-arrows-spin"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Total Requests</span>
+                                <span class="stat-value" id="stat-requests">0</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon red"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Error Rate</span>
+                                <span class="stat-value" id="stat-errors">0.0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Performance Grid -->
+                    <div class="layout-grid">
+                        <!-- System Stats -->
+                        <div class="dashboard-card card-half">
+                            <div class="card-header">
+                                <h2 class="card-title"><i class="fa-solid fa-server"></i> System Runtime</h2>
+                            </div>
+                            <div class="card-body">
+                                <div class="runtime-info-grid">
+                                    <div class="info-item">
+                                        <span class="info-label">Application Name</span>
+                                        <span class="info-value" id="info-app-name">VorteApp</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="info-label">API Prefix</span>
+                                        <span class="info-value" id="info-api-prefix">/api</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="info-label">Python Version</span>
+                                        <span class="info-value" id="info-python">3.13.0</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="info-label">OS Platform</span>
+                                        <span class="info-value" id="info-platform">Windows</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="info-label">Process ID (PID)</span>
+                                        <span class="info-value" id="info-pid">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="info-label">Debug Mode</span>
+                                        <span class="info-value" id="info-debug">Enabled</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Latency & Performance -->
+                        <div class="dashboard-card card-half">
+                            <div class="card-header">
+                                <h2 class="card-title"><i class="fa-solid fa-gauge-high"></i> Performance Gauges</h2>
+                            </div>
+                            <div class="card-body gauges-container">
+                                <div class="gauge-box">
+                                    <div class="gauge-circle" id="cpu-gauge" style="--gauge-percent: 0%;">
+                                        <div class="gauge-inner">
+                                            <span class="gauge-value" id="cpu-value">0%</span>
+                                        </div>
+                                    </div>
+                                    <span class="gauge-label">CPU Usage</span>
+                                </div>
+                                <div class="gauge-box">
+                                    <div class="gauge-circle" id="memory-gauge" style="--gauge-percent: 0%;">
+                                        <div class="gauge-inner">
+                                            <span class="gauge-value" id="memory-value">0MB</span>
+                                        </div>
+                                    </div>
+                                    <span class="gauge-label">Memory footprint</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Requests -->
+                    <div class="dashboard-card margin-top">
+                        <div class="card-header">
+                            <h2 class="card-title"><i class="fa-solid fa-list-check"></i> Recent Activity Log</h2>
+                            <span class="card-subtitle">Real-time HTTP request trace</span>
+                        </div>
+                        <div class="card-body overflow-x">
+                            <table class="data-table" id="table-recent-requests">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Method</th>
+                                        <th>Path</th>
+                                        <th>Status</th>
+                                        <th>Latency</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="empty-state">
+                                        <td colspan="5">No requests recorded yet. Hit the server to see real-time metrics!</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. MODULES PANEL -->
+                <section class="tab-panel" id="panel-modules">
+                    <div class="toolbar">
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="search-modules" placeholder="Filter modules by name or description...">
+                        </div>
+                        <div class="toolbar-stats">
+                            <span class="badge purple" id="count-active-modules">0 Active</span>
+                            <span class="badge grey" id="count-inactive-modules">0 Extra (Beta)</span>
+                        </div>
+                    </div>
+                    <div class="modules-grid" id="modules-container">
+                        <!-- Modules populated via JS -->
+                    </div>
+                </section>
+
+                <!-- 3. ROUTES PANEL -->
+                <section class="tab-panel" id="panel-routes">
+                    <div class="toolbar">
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="search-routes" placeholder="Search routes by path or controller...">
+                        </div>
+                        <div class="filter-group">
+                            <button class="filter-btn active" data-method="all">All</button>
+                            <button class="filter-btn method-get" data-method="GET">GET</button>
+                            <button class="filter-btn method-post" data-method="POST">POST</button>
+                            <button class="filter-btn method-put" data-method="PUT">PUT</button>
+                            <button class="filter-btn method-delete" data-method="DELETE">DELETE</button>
+                        </div>
+                    </div>
+                    <div class="dashboard-card">
+                        <div class="card-body overflow-x">
+                            <table class="data-table" id="table-routes">
+                                <thead>
+                                    <tr>
+                                        <th>Method</th>
+                                        <th>Path</th>
+                                        <th>Module</th>
+                                        <th>Controller / Handler</th>
+                                        <th>Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="routes-container">
+                                    <!-- Routes populated via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. HEALTH PANEL -->
+                <section class="tab-panel" id="panel-health">
+                    <div class="health-header">
+                        <div class="health-summary">
+                            <span class="health-status-badge healthy" id="overall-health-status">Healthy</span>
+                            <span class="health-subtitle">All core systems operational</span>
+                        </div>
+                        <button class="btn btn-primary" id="btn-refresh-health">
+                            <i class="fa-solid fa-rotate"></i> Refresh Health Checks
+                        </button>
+                    </div>
+
+                    <div class="health-list" id="health-container">
+                        <!-- Health items populated via JS -->
+                    </div>
+                </section>
+
+                <!-- 5. LOGS PANEL -->
+                <section class="tab-panel" id="panel-logs">
+                    <div class="toolbar">
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="search-logs" placeholder="Search console logs...">
+                        </div>
+                        <div class="filter-group">
+                            <button class="filter-btn active" data-level="all">All Logs</button>
+                            <button class="filter-btn" data-level="DEBUG">Debug</button>
+                            <button class="filter-btn" data-level="INFO">Info</button>
+                            <button class="filter-btn" data-level="WARNING">Warnings</button>
+                            <button class="filter-btn" data-level="ERROR">Errors</button>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-clear-logs">
+                            <i class="fa-solid fa-trash-can"></i> Clear Terminal
+                        </button>
+                    </div>
+
+                    <div class="terminal-container">
+                        <div class="terminal-header">
+                            <div class="terminal-dots">
+                                <span class="dot red"></span>
+                                <span class="dot yellow"></span>
+                                <span class="dot green"></span>
+                            </div>
+                            <span class="terminal-title">vorte-logger-console ~ bash</span>
+                        </div>
+                        <div class="terminal-body" id="logs-terminal">
+                            <!-- Logs will stream here -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 6. CONFIG PANEL -->
+                <section class="tab-panel" id="panel-config">
+                    <div class="config-layout">
+                        <div class="config-aside">
+                            <div class="dashboard-card">
+                                <div class="card-header">
+                                    <h3 class="card-title">Configuration Modules</h3>
+                                </div>
+                                <div class="card-body">
+                                    <ul class="config-nav" id="config-nav-list">
+                                        <!-- Config modules list -->
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="config-main">
+                            <div class="dashboard-card">
+                                <div class="card-header justify-between">
+                                    <h3 class="card-title" id="active-config-title">App Configuration</h3>
+                                    <button class="btn btn-copy" id="btn-copy-config">
+                                        <i class="fa-solid fa-copy"></i> Copy JSON
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <pre class="code-view"><code id="config-code-block" class="language-json">Select a configuration module on the left.</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Dashboard Logic -->
+    <script src="dashboard.js"></script>
+</body>
+</html>

@@ -72,12 +72,12 @@ async def resolve_user(request: Request) -> Optional[CurrentUser]:
         try:
             jwt_manager: Optional[JWTManager] = getattr(request.app, '_vorte_jwt', None)
             if jwt_manager:
-                payload = jwt_manager.verify(token)
+                payload = await jwt_manager.verify_token(token)
                 return CurrentUser(
                     id=payload.get("sub", ""),
                     email=payload.get("email", ""),
                     name=payload.get("name", ""),
-                    role=payload.get("role", "user"),
+                    role=payload.get("role") or (payload.get("roles") or ["user"])[0],
                     permissions=payload.get("permissions", []),
                     tier=payload.get("tier", "free"),
                 )

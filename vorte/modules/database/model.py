@@ -224,6 +224,24 @@ class Field:
             return self.field_type
         return self.field_type
 
+    def _python_type(self) -> type:
+        """Return the Python type for use in ``Mapped[...]`` annotations."""
+        _map = {
+            str: str,
+            int: int,
+            float: float,
+            bool: bool,
+            datetime: datetime,
+            uuid.UUID: uuid.UUID,
+            dict: dict,
+            list: list,
+        }
+        result = _map.get(self.field_type)
+        if result is not None:
+            return result
+        # For JSON/JSONB/Text etc. fall back to Any
+        return Any  # type: ignore[return-value]
+
 
 # ---------------------------------------------------------------------------
 # Convenience shorthands
@@ -368,6 +386,56 @@ class Base(DeclarativeBase):
     class Config:
         arbitrary_types_allowed = True
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Convert ``Field`` descriptor instances into ``mapped_column`` entries.
+
+        This hook fires *before* SQLAlchemy's own declarative processing so
+        that our helper fields are already proper ``Column`` objects by the
+        time SA introspects the class namespace.
+        """
+        # Scan cls.__dict__ (not inherited attrs) for Field instances
+        field_names = [
+            attr
+            for attr, val in cls.__dict__.items()
+            if isinstance(val, Field) and not attr.startswith("_")
+        ]
+        for attr in field_names:
+            field_obj: Field = cls.__dict__[attr]
+            col = field_obj.to_column()
+            # Replace the Field descriptor with a proper mapped_column
+            # by annotating and setting the column on the class.
+            mc_kwargs: Dict[str, Any] = {
+                k: getattr(col, k)
+                for k in (
+                    "primary_key", "nullable", "unique", "index",
+                    "server_default", "comment",
+                )
+                if getattr(col, k, None) is not None
+            }
+            if col.default is not None:
+                mc_kwargs["default"] = col.default.arg if hasattr(col.default, "arg") else col.default
+            setattr(cls, attr, mapped_column(col.type, *col.foreign_keys, **mc_kwargs))
+            # Inject a Mapped[...] annotation so SA 2.0 declarative form accepts it
+            if "__annotations__" not in cls.__dict__:
+                cls.__annotations__ = {}
+            python_type = field_obj._python_type()
+            # SA 2.0 requires Mapped[T] or Mapped[Optional[T]] annotations
+            nullable = field_obj.nullable
+            if nullable is None:
+                # Default: nullable if no default and not primary_key
+                nullable = (
+                    field_obj.default is None
+                    and field_obj.default_factory is None
+                    and field_obj.server_default is None
+                    and not field_obj.primary_key
+                )
+            if nullable:
+                cls.__annotations__.setdefault(attr, Mapped[Optional[python_type]])  # type: ignore[valid-type]
+            else:
+                cls.__annotations__.setdefault(attr, Mapped[python_type])  # type: ignore[valid-type]
+        super().__init_subclass__(**kwargs)
+
+
 
 # ---------------------------------------------------------------------------
 # VorteModel
@@ -434,3 +502,100 @@ class VorteModel(Base, TimestampMixin):
     def __repr__(self) -> str:
         pk = getattr(self, "id", None)
         return f"<{self.__class__.__name__} id={pk!r}>"
+
+    @classmethod
+    def query(cls: Type[T]) -> Any:
+        """Get a chainable QueryBuilder for this model."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        try:
+            qb = _global_container.resolve(QueryBuilder)
+            return qb.query(cls)
+        except Exception:
+            raise RuntimeError(
+                "DatabaseModule is not registered or initialized. "
+                "Ensure DatabaseModule is registered on the app."
+            )
+
+    @classmethod
+    async def find(cls: Type[T], id: Any) -> Optional[T]:
+        """Find a model record by primary key."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        return await qb.find(cls, id)
+
+    @classmethod
+    async def find_or_fail(cls: Type[T], id: Any) -> T:
+        """Find a model record by primary key or raise RecordNotFoundError."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        return await qb.find_or_fail(cls, id)
+
+    @classmethod
+    async def find_all(cls: Type[T]) -> List[T]:
+        """Find all records for this model."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        return await qb.find_all(cls)
+
+    @classmethod
+    async def create(cls: Type[T], data: Dict[str, Any]) -> T:
+        """Create and persist a new model record."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        return await qb.create(cls, data)
+
+    @classmethod
+    async def exists(cls: Type[T], **filters: Any) -> bool:
+        """Check if a record matching the filters exists."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        return await qb.exists(cls, **filters)
+
+    @classmethod
+    async def count(cls: Type[T]) -> int:
+        """Count the total number of records for this model."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        return await qb.count(cls)
+
+    async def save(self) -> None:
+        """Save (insert or update) the current model instance to the database.
+
+        If ``self.id`` is ``None``, a new UUID is auto-generated so the
+        instance can be located after insertion.
+        """
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        # Auto-generate ID for brand new instances
+        if self.id is None:
+            self.id = uuid.uuid4()  # type: ignore[assignment]
+        is_existing = await qb.exists(self.__class__, id=self.id)
+        if is_existing:
+            data = {
+                c.name: getattr(self, c.name)
+                for c in self.__table__.columns  # type: ignore[attr-defined]
+                if c.name != "id"
+            }
+            # Remove None values to avoid overwriting server-managed columns
+            # (e.g. created_at/updated_at set by the DB on insert)
+            data = {k: v for k, v in data.items() if v is not None}
+            await qb.update(self.__class__, self.id, data)
+        else:
+            data = self.to_dict()
+            await qb.create(self.__class__, data)
+
+    async def delete(self) -> bool:
+        """Delete the current model instance from the database."""
+        from vorte.core.di import _global_container
+        from vorte.modules.database.query import QueryBuilder
+        qb = _global_container.resolve(QueryBuilder)
+        return await qb.delete(self.__class__, self.id)
+

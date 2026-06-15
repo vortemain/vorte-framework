@@ -78,6 +78,20 @@ class Vorte:
         # Exclude specific modules
         app = Vorte(auto_load=True, exclude_modules=['mpesa', 'payments'])
     """
+
+    # Core/main modules of the framework that are auto-loaded by default
+    _CORE_MODULES = {
+        'logging',
+        'database',
+        'cache',
+        'queue',
+        'security',
+        'auth',
+        'ai',
+        'storage',
+        'i18n',
+        'dashboard',
+    }
     
     # All built-in modules — imported lazily to avoid circular imports
     _BUILTIN_MODULES = None
@@ -164,6 +178,12 @@ class Vorte:
             'errors': 0,
             'last_requests': [],
         }
+        # Generate runtime token for dashboard in development if not configured
+        if self._settings.dashboard.auth_required and not self._settings.dashboard.token and not self._settings.app_key:
+            if self._settings.app_env == "development":
+                import secrets
+                self._dashboard_runtime_token = secrets.token_hex(16)
+        
         self._start_time: Optional[float] = None
         
         # Build the lifespan handler that drives startup/shutdown
@@ -223,11 +243,27 @@ class Vorte:
         # Auto-load all built-in modules
         if auto_load:
             self.use_all_modules(exclude=exclude_modules, dashboard=dashboard)
+        elif dashboard:
+            # If auto_load is False but dashboard is True (default), register only the DashboardModule
+            from vorte.modules.dashboard import DashboardModule
+            self.register(DashboardModule())
             
         # Register all modules (middleware and routes)
         self._module_registry.register_all(self)
+
+        # Log dashboard runtime token in development if generated
+        if hasattr(self, "_dashboard_runtime_token"):
+            import sys
+            sys.stderr.write(
+                f"\n======================================================================\n"
+                f"[Vorte DX] Security Warning: Dashboard is secured. Access it using token:\n"
+                f"  Token: {self._dashboard_runtime_token}\n"
+                f"  URL: {self._settings.dashboard.path}?token={self._dashboard_runtime_token}\n"
+                f"======================================================================\n\n"
+            )
+            sys.stderr.flush()
     async def __call__(self, scope, receive, send):
-        """ASGI entry point — proxies to FastAPI."""
+        """ASGI entry point - proxies to FastAPI."""
         if scope["type"] != "http":
             await self.fastapi(scope, receive, send)
             return
@@ -363,11 +399,29 @@ class Vorte:
 
             @self.fastapi.get("/redoc", include_in_schema=False)
             async def custom_redoc_html():
-                return get_redoc_html(
-                    openapi_url=self.fastapi.openapi_url,
-                    title=self.fastapi.title + " - ReDoc",
-                    redoc_favicon_url="/_vorte/assets/favicon/favicon.ico",
-                )
+                # FastAPI's get_redoc_html() uses `redoc@next` which is a dead tag on
+                # jsDelivr and returns 404, causing a blank page.  We pin to a stable
+                # release instead and serve our own favicon.
+                from fastapi.responses import HTMLResponse
+                openapi_url = self.fastapi.openapi_url
+                title = self.fastapi.title + " - ReDoc"
+                html = f"""<!DOCTYPE html>
+<html>
+  <head>
+    <title>{title}</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/_vorte/assets/favicon/favicon.ico">
+    <style>body {{ margin: 0; padding: 0; }}</style>
+  </head>
+  <body>
+    <redoc spec-url='{openapi_url}'></redoc>
+    <script src="https://cdn.jsdelivr.net/npm/redoc@2.1.5/bundles/redoc.standalone.js"></script>
+  </body>
+</html>"""
+                return HTMLResponse(html)
+
 
         @self.fastapi.get("/health", include_in_schema=False)
         async def health_check():
@@ -459,18 +513,53 @@ class Vorte:
     
     def _setup_dashboard_api(self) -> None:
         """Setup dashboard API routes for the admin panel."""
+        from fastapi import Depends
         
-        @self.fastapi.get("/_vorte/dashboard/overview", include_in_schema=False)
+        @self.fastapi.get("/_vorte/dashboard/overview", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_overview():
             """Dashboard overview data — modules, routes, metrics, uptime."""
             import platform
+            from vorte import __version__
             uptime = time.time() - self._start_time if self._start_time else 0
             modules = self._module_registry.list_modules()
             routes = self.get_routes()
+            
+            memory_mb = 0
+            if platform.system() == "Windows":
+                try:
+                    import ctypes
+                    class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+                        _fields_ = [
+                            ("cb", ctypes.c_ulong),
+                            ("PageFaultCount", ctypes.c_ulong),
+                            ("PeakWorkingSetSize", ctypes.c_size_t),
+                            ("WorkingSetSize", ctypes.c_size_t),
+                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                            ("PagefileUsage", ctypes.c_size_t),
+                            ("PeakPagefileUsage", ctypes.c_size_t),
+                        ]
+                    GetProcessMemoryInfo = ctypes.windll.psapi.GetProcessMemoryInfo
+                    GetCurrentProcess = ctypes.windll.kernel32.GetCurrentProcess
+                    counters = PROCESS_MEMORY_COUNTERS()
+                    counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+                    if GetProcessMemoryInfo(GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+                        memory_mb = round(counters.WorkingSetSize / (1024 * 1024), 1)
+                except Exception:
+                    pass
+            else:
+                try:
+                    import resource
+                    memory_mb = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+                except Exception:
+                    pass
+
             return JSONResponse(content={
                 "framework": {
                     "name": "Vorte",
-                    "version": "1.0.0",
+                    "version": __version__,
                     "python": platform.python_version(),
                     "platform": platform.system(),
                 },
@@ -495,12 +584,12 @@ class Vorte:
                 "metrics": self._request_metrics,
                 "system": {
                     "cpu_percent": 0,
-                    "memory_mb": 0,
+                    "memory_mb": memory_mb,
                     "pid": __import__('os').getpid(),
                 },
             })
         
-        @self.fastapi.get("/_vorte/dashboard/modules", include_in_schema=False)
+        @self.fastapi.get("/_vorte/dashboard/modules", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_modules():
             """Detailed module information."""
             modules = self._module_registry.list_modules()
@@ -509,7 +598,7 @@ class Vorte:
                 "modules": modules,
             })
         
-        @self.fastapi.get("/_vorte/dashboard/routes", include_in_schema=False)
+        @self.fastapi.get("/_vorte/dashboard/routes", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_routes():
             """All registered routes."""
             routes = self.get_routes()
@@ -518,7 +607,7 @@ class Vorte:
                 "routes": routes,
             })
         
-        @self.fastapi.get("/_vorte/dashboard/health", include_in_schema=False)
+        @self.fastapi.get("/_vorte/dashboard/health", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_health():
             """Health check details."""
             results = await self._module_registry.health_check_all()
@@ -529,7 +618,7 @@ class Vorte:
                 "modules": results,
             })
         
-        @self.fastapi.get("/_vorte/dashboard/config", include_in_schema=False)
+        @self.fastapi.get("/_vorte/dashboard/config", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_config():
             """Non-sensitive configuration."""
             s = self._settings
@@ -552,7 +641,7 @@ class Vorte:
                 "dashboard": {"enabled": s.dashboard.enabled, "path": s.dashboard.path},
             })
         
-        @self.fastapi.get("/_vorte/dashboard/events", include_in_schema=False)
+        @self.fastapi.get("/_vorte/dashboard/events", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_events():
             """Registered events and listeners."""
             return JSONResponse(content={
@@ -562,7 +651,7 @@ class Vorte:
                 }
             })
         
-        @self.fastapi.get("/_vorte/dashboard/metrics", include_in_schema=False)
+        @self.fastapi.get("/_vorte/dashboard/metrics", include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
         async def dashboard_metrics():
             """Request metrics."""
             return JSONResponse(content=self._request_metrics)
@@ -779,14 +868,49 @@ class Vorte:
         return self
     
     def get_routes(self) -> List[Dict[str, Any]]:
-        """Get all registered routes."""
+        """Get all registered routes with complete metadata for DX dashboard."""
         routes = []
         for route in self.fastapi.routes:
-            if hasattr(route, "methods") and hasattr(route, "path"):
+            if hasattr(route, "path"):
+                methods_list = []
+                if hasattr(route, "methods") and route.methods:
+                    methods_list = list(route.methods)
+                
+                # Determine primary HTTP method (defaulting to GET, or WS for websockets)
+                primary_method = "GET"
+                if methods_list:
+                    # Filter out HEAD/OPTIONS to find the primary method
+                    filtered_methods = [m for m in methods_list if m not in ("HEAD", "OPTIONS")]
+                    if filtered_methods:
+                        primary_method = filtered_methods[0]
+                    else:
+                        primary_method = methods_list[0]
+                elif route.__class__.__name__ in ("APIWebSocketRoute", "WebSocketRoute"):
+                    primary_method = "WS"
+                
+                # Determine handler name and module name
+                handler_name = "-"
+                module_name = "core"
+                if hasattr(route, "endpoint") and route.endpoint:
+                    if hasattr(route.endpoint, "__name__"):
+                        handler_name = route.endpoint.__name__
+                    elif hasattr(route.endpoint, "__class__"):
+                        handler_name = route.endpoint.__class__.__name__
+                        
+                    # Determine Vorte module name
+                    if hasattr(route.endpoint, "__module__") and route.endpoint.__module__:
+                        mod_parts = route.endpoint.__module__.split(".")
+                        if len(mod_parts) > 2 and mod_parts[0] == "vorte" and mod_parts[1] == "modules":
+                            module_name = mod_parts[2]
+                
                 routes.append({
                     "path": route.path,
-                    "methods": list(route.methods) if route.methods else [],
-                    "name": route.name,
+                    "methods": methods_list,
+                    "method": primary_method,
+                    "name": getattr(route, "name", "-"),
+                    "handler": handler_name,
+                    "module": module_name,
+                    "tags": getattr(route, "tags", []),
                 })
         return routes
     
@@ -800,13 +924,19 @@ class Vorte:
         self,
         exclude: Optional[List[str]] = None,
         dashboard: bool = True,
+        load_extra: bool = False,
     ) -> "Vorte":
         """
-        Register all 22 built-in modules at once.
+        Register built-in modules with the application.
+        
+        By default (when load_extra=False), only registers the core modules:
+        logging, database, cache, queue, security, auth, ai, storage, i18n, and dashboard.
+        When load_extra=True, all 22 built-in modules are registered.
         
         Args:
             exclude: Module names to skip (e.g. ['mpesa', 'payments']).
             dashboard: Whether to include the DashboardModule.
+            load_extra: Whether to load all extra modules as well.
         
         Returns:
             self for chaining.
@@ -821,6 +951,8 @@ class Vorte:
         
         builtin = self._get_builtin_modules()
         for name, module_cls in builtin.items():
+            if not load_extra and name not in self._CORE_MODULES:
+                continue
             if name not in exclude:
                 try:
                     self._module_registry.register(module_cls())
@@ -857,3 +989,60 @@ class Vorte:
             'time': time.strftime('%H:%M:%S'),
         })
         self._request_metrics['last_requests'] = self._request_metrics['last_requests'][-50:]
+
+
+async def verify_dashboard_access(request: Request) -> None:
+    """FastAPI dependency to secure dashboard routes."""
+    from fastapi import HTTPException, status
+    app = request.app
+    # If app is FastAPI instance but vorte is attached (or if app is Vorte itself)
+    vorte_app = getattr(app, "vorte", None) or app
+    settings = vorte_app.settings
+
+    # Bypass static asset requests
+    path = request.url.path
+    if path.endswith((".css", ".js", ".png", ".ico", ".jpg", ".jpeg", ".svg")):
+        return
+
+    if not settings.dashboard.auth_required:
+        return
+
+    # 1. Try token-based auth
+    token = request.headers.get("X-Dashboard-Token")
+    if not token:
+        # Check query param
+        token = request.query_params.get("token")
+    if not token:
+        # Check Authorization Bearer header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+    # Match token
+    expected_token = settings.dashboard.token or settings.app_key
+    
+    # If no expected token is configured, check if we generated a runtime one
+    if not expected_token and hasattr(vorte_app, "_dashboard_runtime_token"):
+        expected_token = vorte_app._dashboard_runtime_token
+
+    if expected_token and token == expected_token:
+        return
+
+    # 2. Try admin user auth (using resolved user)
+    try:
+        from vorte.modules.auth.guards import resolve_user
+        user = await resolve_user(request)
+        if user and (user.role == "admin" or user.is_admin):
+            return
+    except Exception:
+        pass
+
+    # Unauthorized
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "code": "UNAUTHORIZED",
+            "message": "Dashboard access denied. Provide a valid X-Dashboard-Token header, token query parameter, or authenticate as an admin user.",
+        },
+    )
+

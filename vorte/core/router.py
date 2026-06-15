@@ -66,13 +66,19 @@ class VorteAPIRoute(APIRoute):
     def get_route_handler(self) -> Callable:
         original_route_handler = super().get_route_handler()
         
+        # Resolve to underlying function if endpoint is a bound method
+        func = self.endpoint.__func__ if hasattr(self.endpoint, "__func__") else self.endpoint
+        
         inferred = infer_relations(self.response_model)
-        manual = getattr(self.endpoint, "_vorte_relations", ())
+        manual = getattr(func, "_vorte_relations", ())
         merged_relations = tuple(set(inferred + manual))
         
-        self.endpoint._vorte_relations = merged_relations
-        if merged_relations:
-            self.endpoint._vorte_select_related = True
+        try:
+            func._vorte_relations = merged_relations
+            if merged_relations:
+                func._vorte_select_related = True
+        except AttributeError:
+            pass
 
         async def custom_route_handler(request: Request) -> Response:
             token = active_relations.set(merged_relations)
@@ -117,6 +123,36 @@ class VorteAPIRouter(APIRouter):
         self._versioned_routes: List[VersionedRoute] = []
         kwargs.setdefault("route_class", VorteAPIRoute)
         super().__init__(prefix=prefix, tags=tags, **kwargs)
+    
+    def register_controller(self, controller: Any) -> None:
+        """Register all decorated methods of a Controller class."""
+        from vorte.core.controller import Controller
+        if isinstance(controller, type):
+            instance = controller()
+        else:
+            instance = controller
+            
+        controller_prefix = getattr(instance, "_vorte_prefix", "")
+        controller_tags = getattr(instance, "_vorte_tags", None) or []
+        
+        for attr_name in dir(instance):
+            attr = getattr(instance, attr_name)
+            if hasattr(attr, "_vorte_routes"):
+                for method, path, kwargs in attr._vorte_routes:
+                    combined_path = (controller_prefix.rstrip("/") + "/" + path.lstrip("/")).rstrip("/")
+                    if not combined_path.startswith("/"):
+                        combined_path = "/" + combined_path
+                    
+                    kwargs_tags = kwargs.get("tags") or []
+                    merged_tags = list(set(controller_tags + kwargs_tags))
+                    if merged_tags:
+                        kwargs["tags"] = merged_tags
+                        
+                    if method == "WEBSOCKET":
+                        ws_kwargs = {k: v for k, v in kwargs.items() if k not in ("tags", "response_model")}
+                        self.add_api_websocket_route(combined_path, attr, **ws_kwargs)
+                    else:
+                        self.add_api_route(combined_path, attr, methods=[method], **kwargs)
     
     def add_api_route(
         self,
