@@ -150,7 +150,7 @@ class AuthModule(Module):
             if not user:
                 return error_response("INVALID_CREDENTIALS", "Invalid email or password", status_code=401)
 
-            tokens = self.jwt.create_tokens(
+            tokens = await self.jwt.create_tokens(
                 sub=user["id"],
                 email=user["email"],
                 name=user["name"],
@@ -168,7 +168,7 @@ class AuthModule(Module):
                 password=request.password,
                 name=request.name,
             )
-            tokens = self.jwt.create_tokens(
+            tokens = await self.jwt.create_tokens(
                 sub=user["id"],
                 email=user["email"],
                 name=user["name"],
@@ -184,11 +184,12 @@ class AuthModule(Module):
             if not refresh_token:
                 return error_response("TOKEN_REQUIRED", "Refresh token required", status_code=400)
 
-            payload = self.jwt.verify_refresh(refresh_token)
-            if not payload:
+            try:
+                payload = await self.jwt.verify_token(refresh_token, expected_type="refresh")
+            except Exception:
                 return error_response("INVALID_TOKEN", "Invalid or expired refresh token", status_code=401)
 
-            tokens = self.jwt.create_tokens(
+            tokens = await self.jwt.create_tokens(
                 sub=payload["sub"],
                 email=payload.get("email", ""),
                 name=payload.get("name", ""),
@@ -233,7 +234,10 @@ class AuthModule(Module):
             new_password = body.get("password", "")
             if not token or not new_password:
                 return error_response("INVALID_REQUEST", "Token and new password required", status_code=400)
-            payload = self.jwt.verify(token)
+            try:
+                payload = await self.jwt.verify_token(token)
+            except Exception:
+                payload = None
             if not payload or payload.get("type") != "password_reset":
                 return error_response("INVALID_TOKEN", "Invalid or expired reset token", status_code=400)
             return success_response({"message": "Password reset successfully"})
@@ -249,7 +253,7 @@ class AuthModule(Module):
         async def oauth_callback(provider: str, code: str, request: Request):
             """Handle OAuth callback."""
             user = await self.oauth.handle_callback(provider, code)
-            tokens = self.jwt.create_tokens(
+            tokens = await self.jwt.create_tokens(
                 sub=f"{provider}:{user.provider_id}",
                 email=user.email,
                 name=user.name,

@@ -5,6 +5,12 @@ All notable changes to the Vorte Framework are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-06-15
+
+### Fixed
+
+- **Developer Log Terminal Flooding** — added `VorteConsoleFilter` to filter out internal framework/dashboard log records (such as uvicorn logs for `/_vorte/dashboard/logs` and health probes) from stdout and the in-memory ring buffer, resolving the issue where developer route logs (like register/login) were pushed out.
+
 ## [1.2.1] - 2026-06-15
 
 ### Fixed
@@ -149,6 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD with GitHub Actions (3-platform wheel build + PyPI publish)
 - MIT License
 
+[1.2.2]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.2
 [1.2.1]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.1
 [1.2.0]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.0
 [1.0.8]: https://github.com/Lijohtech-Developers/vorte-framework/releases/tag/v1.0.8

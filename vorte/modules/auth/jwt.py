@@ -281,6 +281,48 @@ class JWTManager:
         self._blacklisted_jtis.clear()
         return count
 
+    async def create_tokens(
+        self,
+        sub: str,
+        email: str,
+        name: Optional[str] = None,
+        role: str = "user",
+        permissions: Optional[List[str]] = None,
+        tier: str = "free",
+        mfa_verified: bool = False,
+        extra_claims: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Create both access and refresh tokens."""
+        claims = dict(extra_claims or {})
+        if name:
+            claims["name"] = name
+
+        access_token = await self.create_access_token(
+            user_id=sub,
+            email=email,
+            roles=[role],
+            permissions=permissions,
+            tier=tier,
+            mfa_verified=mfa_verified,
+            extra_claims=claims,
+        )
+        refresh_token = None
+        if self._enable_refresh_tokens:
+            refresh_token = await self.create_refresh_token(
+                user_id=sub,
+                extra_claims=claims,
+            )
+
+        result = {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": self._access_token_expiry,
+        }
+        if refresh_token:
+            result["refresh_token"] = refresh_token
+        return result
+
+
     # ------------------------------------------------------------------
     # Utility
     # ------------------------------------------------------------------

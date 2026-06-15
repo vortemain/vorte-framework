@@ -120,6 +120,23 @@ class VorteConsoleFormatter(logging.Formatter):
         return formatted
 
 
+class VorteConsoleFilter(logging.Filter):
+    """Filters out internal framework/dashboard/health request logs in development."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Ignore dashboard query logs, health checks, readiness and liveness probes
+        message = record.getMessage()
+        if "/_vorte" in message or "/health" in message or "/ready" in message or "/live" in message:
+            return False
+            
+        if hasattr(record, "path"):
+            path = getattr(record, "path", "")
+            if path.startswith("/_vorte") or path in ("/health", "/ready", "/live"):
+                return False
+                
+        return True
+
+
 class RingBufferHandler(logging.Handler):
     """Intercepts Python logging records into the Vorte ring buffer (dedup-safe)."""
 
@@ -134,6 +151,15 @@ class RingBufferHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            # Skip internal framework paths to prevent buffer flooding
+            message = record.getMessage()
+            if "/_vorte" in message or "/health" in message or "/ready" in message or "/live" in message:
+                return
+            if hasattr(record, "path"):
+                path = getattr(record, "path", "")
+                if path.startswith("/_vorte") or path in ("/health", "/ready", "/live"):
+                    return
+
             rid = id(record)
             if rid in self._seen:
                 return
@@ -168,6 +194,7 @@ class Logger:
             handler.setFormatter(JSONFormatter())
         else:
             handler.setFormatter(VorteConsoleFormatter())
+            handler.addFilter(VorteConsoleFilter())
         self._logger.addHandler(handler)
         # Prevent propagation to root logger
         self._logger.propagate = False
@@ -285,27 +312,47 @@ class LoggingModule(Module):
         from vorte.core.config import settings
         if not settings.is_production():
             console_formatter = VorteConsoleFormatter()
+            console_filter = VorteConsoleFilter()
             for name in ("", "vorte", "uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
                 lg = logging.getLogger(name)
                 for h in lg.handlers:
                     if isinstance(h, logging.StreamHandler):
                         h.setFormatter(console_formatter)
+                        if not any(isinstance(f, VorteConsoleFilter) for f in h.filters):
+                            h.addFilter(console_filter)
 
         # Request logging middleware
         @app.middleware("http")
         async def logging_middleware(request: Request, call_next):
             start = time.time()
-            response = await call_next(request)
-            latency_ms = int((time.time() - start) * 1000)
-            logger.info(
-                f"{request.method} {request.url.path}",
-                method=request.method,
-                path=request.url.path,
-                status_code=response.status_code,
-                latency_ms=latency_ms,
-                request_id=getattr(request.state, "request_id", ""),
-            )
-            return response
+            path = request.url.path
+            is_internal = path.startswith("/_vorte") or path in ("/health", "/ready", "/live")
+            
+            try:
+                response = await call_next(request)
+                latency_ms = int((time.time() - start) * 1000)
+                if not is_internal:
+                    logger.info(
+                        f"{request.method} {request.url.path}",
+                        method=request.method,
+                        path=request.url.path,
+                        status_code=response.status_code,
+                        latency_ms=latency_ms,
+                        request_id=getattr(request.state, "request_id", ""),
+                    )
+                return response
+            except Exception as exc:
+                latency_ms = int((time.time() - start) * 1000)
+                if not is_internal:
+                    logger.error(
+                        f"{request.method} {request.url.path} - Unhandled Exception",
+                        method=request.method,
+                        path=request.url.path,
+                        status_code=500,
+                        latency_ms=latency_ms,
+                        request_id=getattr(request.state, "request_id", ""),
+                    )
+                raise
 
         if hasattr(app, 'container'):
             app.container.register_instance(Logger, logger)
@@ -315,11 +362,14 @@ class LoggingModule(Module):
         from vorte.core.config import settings
         if not settings.is_production():
             console_formatter = VorteConsoleFormatter()
+            console_filter = VorteConsoleFilter()
             for name in ("", "vorte", "uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
                 lg = logging.getLogger(name)
                 for h in lg.handlers:
                     if isinstance(h, logging.StreamHandler):
                         h.setFormatter(console_formatter)
+                        if not any(isinstance(f, VorteConsoleFilter) for f in h.filters):
+                            h.addFilter(console_filter)
 
     @property
     def log(self) -> Logger:

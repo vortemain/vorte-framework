@@ -58,7 +58,7 @@ Runtime and framework information.
   "success": true,
   "data": {
     "framework": "Vorte",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "python_version": "3.13.6",
     "platform": "win32",
     "module_count": 5,
