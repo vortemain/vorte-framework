@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, TYPE_CHECKING
 
+from fastapi import Request
 from vorte.core.module import Module, ModuleMeta, ModulePriority
 
 if TYPE_CHECKING:
@@ -73,13 +74,15 @@ class DashboardModule(Module):
                     return FileResponse(str(index_path))
                 return {"error": "Dashboard not built. Run: vorte dashboard:build"}
 
+            from fastapi.responses import RedirectResponse
+
             @app.fastapi.get(dashboard_path, include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])
-            async def dashboard_index():
-                """Dashboard home page."""
-                index_path = static_dir / "index.html"
-                if index_path.exists():
-                    return FileResponse(str(index_path))
-                return {"error": "Dashboard not built. Run: vorte dashboard:build"}
+            async def dashboard_index(request: Request):
+                """Redirect to index.html to ensure relative assets load correctly."""
+                query_params = request.url.query
+                suffix = f"?{query_params}" if query_params else ""
+                clean_path = dashboard_path.rstrip('/')
+                return RedirectResponse(url=f"{clean_path}/index.html{suffix}")
         else:
             # No static files — redirect to API docs
             @app.fastapi.get(dashboard_path, include_in_schema=False, dependencies=[Depends(verify_dashboard_access)])

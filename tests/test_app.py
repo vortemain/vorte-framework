@@ -346,7 +346,7 @@ async def test_dashboard_assets_serving():
     
     async with VorteTestClient(app) as client:
         # 1. Main index route
-        resp = await client.get("/vorte/dashboard")
+        resp = await client.get("/vorte/dashboard", follow_redirects=True)
         assert resp.status_code == 200
         assert b"Vorte Admin Dashboard" in resp._response.content
 
