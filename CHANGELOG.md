@@ -5,6 +5,18 @@ All notable changes to the Vorte Framework are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-06-15
+
+### Fixed
+
+- **Version Synchronization** — synchronized hardcoded framework version numbers across CLI, application core, and documentation to align with PyPI release.
+
+## [1.2.3] - 2026-06-15
+
+### Fixed
+
+- **Auth Route Fix** — resolved `AttributeError` in `POST /auth/register` caused by schema mismatch on user creation.
+
 ## [1.2.2] - 2026-06-15
 
 ### Fixed
@@ -155,6 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD with GitHub Actions (3-platform wheel build + PyPI publish)
 - MIT License
 
+[1.2.4]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.4
+[1.2.3]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.3
 [1.2.2]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.2
 [1.2.1]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.1
 [1.2.0]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.0
