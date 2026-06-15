@@ -186,6 +186,5 @@ jobs:
             --repository-url https://pypi.pkg.github.com/${{ github.repository_owner }} \
             --username ${{ github.repository_owner }} \
             --password ${{ secrets.GITHUB_TOKEN }} \
-            --skip-existing \
             --verbose
         continue-on-error: true

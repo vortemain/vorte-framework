@@ -5,6 +5,17 @@ All notable changes to the Vorte Framework are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-06-15
+
+### Fixed
+
+- **Dashboard Uptime Counter** — uptime counter no longer resets/jumps on every API poll; client-side clock is only re-seeded when the server restarts or drift exceeds 5 seconds.
+- **App Start Time** — `_start_time` is now initialized at object construction rather than deferred to `None`, ensuring uptime is accurate even before the first request.
+
+### CI
+
+- Removed unsupported `--skip-existing` flag from the GitHub Packages publish step in `publish.yml` which was causing the `publish-github` job to fail.
+
 ## [1.2.4] - 2026-06-15
 
 ### Fixed
@@ -167,6 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI/CD with GitHub Actions (3-platform wheel build + PyPI publish)
 - MIT License
 
+[1.2.5]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.5
 [1.2.4]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.4
 [1.2.3]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.3
 [1.2.2]: https://github.com/vortemain/vorte-framework/releases/tag/v1.2.2

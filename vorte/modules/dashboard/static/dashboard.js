@@ -215,9 +215,16 @@
         document.getElementById('stat-errors').innerText = `${errorPercent}%`;
 
         // Uptime — seed the client-side live counter
-        _uptimeBaseSeconds = data.app.uptime_seconds;
-        _uptimeAnchorTs = Date.now();
-        tickUptime(); // update display immediately
+        const serverUptime = data.app.uptime_seconds;
+        const currentClientUptime = _uptimeAnchorTs === 0 ? 0 : _uptimeBaseSeconds + (Date.now() - _uptimeAnchorTs) / 1000;
+        
+        // Only seed the counter if it hasn't been seeded yet, if the server restarted (uptime dropped),
+        // or if there's a significant drift (> 5 seconds) between the client and server clocks.
+        if (_uptimeAnchorTs === 0 || serverUptime < currentClientUptime - 5 || Math.abs(serverUptime - currentClientUptime) > 5) {
+            _uptimeBaseSeconds = serverUptime;
+            _uptimeAnchorTs = Date.now();
+            tickUptime(); // update display immediately
+        }
 
 
         // Env and details

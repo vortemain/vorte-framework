@@ -184,7 +184,7 @@ class Vorte:
                 import secrets
                 self._dashboard_runtime_token = secrets.token_hex(16)
         
-        self._start_time: Optional[float] = None
+        self._start_time: float = time.time()
         
         # Build the lifespan handler that drives startup/shutdown
         @asynccontextmanager

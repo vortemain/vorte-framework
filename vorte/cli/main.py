@@ -974,7 +974,7 @@ def cli():
             import vorte
             version = vorte.__version__
         except Exception:
-            version = "1.2.4"
+            version = "1.2.5"
         print(f"Vorte Framework v{version}")
         return
 
@@ -1061,7 +1061,7 @@ def _print_help():
         import vorte
         version = vorte.__version__
     except Exception:
-        version = "1.2.4"
+        version = "1.2.5"
     print(f"""
   Vorte Framework CLI v{version}
   ==========================
